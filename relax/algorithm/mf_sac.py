@@ -129,71 +129,6 @@ class MFSAC(Algorithm):
 
             # get the noise action
 
-            # flow_noise_key,noise_rng=jax.random.split(flow_noise_key,2)
-            #
-            # r0 = jax.random.uniform(r_key, shape=(action.shape[0],), minval=1e-3, maxval=0.9946)
-            # mask = jax.random.bernoulli(mask_key, p=0.0, shape=(action.shape[0],))
-            # t0 = jax.random.uniform(t_key, shape=(action.shape[0],), minval=1e-3, maxval=0.9946)
-            # is_t_gt_r = t0 > r0
-            # t_swap = jnp.where(is_t_gt_r, t0, r0)
-            # r_swap = jnp.where(is_t_gt_r, r0, t0)
-            # r = jnp.where(mask, r0, r_swap)
-            # t = jnp.where(mask, r0, t_swap)
-            #
-            # t = jnp.expand_dims(t, axis=1)
-            # r = jnp.expand_dims(r, axis=1)
-            #
-            # noise_sample = jax.random.normal(flow_noise_key, action.shape)
-            #
-            # def q_sample(t: jax.Array, x_start: jax.Array, noise: jax.Array):
-            #     return t * x_start + (1 - t) * noise
-            #
-            # noisy_actions = q_sample(t, action, noise_sample)
-            # noisy_actions_repeat = jnp.repeat(jnp.expand_dims(noisy_actions, axis=1), axis=1, repeats=self.K)
-            # std = jnp.expand_dims((1-t) / t, axis=-1)
-            # lower_bound = 1 / (1-t)[:, :, None] * noisy_actions_repeat - (1 / std)
-            # upper_bound = 1 / (1-t)[:, :, None] * noisy_actions_repeat + (1 / std)
-            # tnormal_noise = jax.random.truncated_normal(
-            #     key, lower=lower_bound, upper=upper_bound, shape=(action.shape[0], self.K, action.shape[1]))
-            # flow_noise_key,noise_rng=jax.random.split(flow_noise_key,2)
-            # normal_noise = jax.random.normal(flow_noise_key, shape=((action.shape[0], self.K, action.shape[1])))
-            # normal_noise_clip = jnp.clip(normal_noise, min=lower_bound, max=upper_bound)
-            # noise = jnp.where(jnp.isnan(tnormal_noise), normal_noise_clip, tnormal_noise)
-            # clean_samples = 1 / t[:, :, None] * noisy_actions_repeat - std * noise
-            #
-            # observations_repeat = jnp.repeat(jnp.expand_dims(obs, axis=1), axis=1, repeats=self.K)
-            #
-            # devices = jax.devices()
-            # compute_Q_DDP = partial(shard_map, mesh=Mesh(devices, ('i',)), in_specs=(P('i'), P('i')), out_specs=(P('i')))(get_min_q)
-            # critic = compute_Q_DDP( observations_repeat, clean_samples)  # batch_size, K
-            # weight = nn.softmax((1 / jnp.exp(log_alpha)) * critic, axis=1)
-            #
-            #
-            # u_estimation = jnp.sum(weight[:,:,None] * (clean_samples-noise), axis=1)
-            # obs_expanded = jnp.repeat(obs, self.K, axis=0)
-            #
-            # def policy_loss_fn(policy_params) -> jax.Array:
-            #
-            #     def denoiser(x, r, t):
-            #         return self.agent.policy(policy_params,obs_expanded, x, r, t)
-            #
-            #     loss,dudt,u_out,dudt_out,dudt_max = self.agent.flow.reverse_weighted_p_loss(weight, denoiser, r, t,clean_samples,noise,
-            #                                                    noisy_actions)
-            #     u_pred=jnp.mean(u_out)
-            #     dudt_pred=jnp.mean(dudt_out)
-            #     """
-            #         def reverse_weighted_p_loss(self, weights: jax.Array, model: MeanFlowModel, r: jax.Array, t: jax.Array,
-            #                     x_start: jax.Array, noise: jax.Array, x_t: jax.Array):
-            #     """
-            #     return loss, (jnp.sum(weight[:,:,None]), u_estimation,
-            #                   jnp.mean(jnp.sum(weight[:,:,None])), jnp.std(jnp.sum(weight[:,:,None])),dudt,u_pred,dudt_pred,dudt_max)
-
-
-
-
-
-
-
             flow_noise_key,noise_rng=jax.random.split(flow_noise_key,2)
 
             r0 = jax.random.uniform(r_key, shape=(action.shape[0],), minval=1e-3, maxval=0.9946)
@@ -224,6 +159,7 @@ class MFSAC(Algorithm):
             normal_noise = jax.random.normal(flow_noise_key, shape=((action.shape[0], self.K, action.shape[1])))
             normal_noise_clip = jnp.clip(normal_noise, min=lower_bound, max=upper_bound)
             noise = jnp.where(jnp.isnan(tnormal_noise), normal_noise_clip, tnormal_noise)
+            # noise=tnormal_noise
             clean_samples = 1 / t[:, :, None] * noisy_actions_repeat - std * noise
 
             observations_repeat = jnp.repeat(jnp.expand_dims(obs, axis=1), axis=1, repeats=self.K)
@@ -252,6 +188,7 @@ class MFSAC(Algorithm):
                 """
                 return loss, (jnp.sum(weight[:,:,None]), u_estimation,
                               jnp.mean(jnp.sum(weight[:,:,None])), jnp.std(jnp.sum(weight[:,:,None])),dudt,u_pred,dudt_pred,dudt_max)
+
 
             (total_loss, (q_weights, scaled_q, q_mean, q_std,dudt,u_pred,dudt_pred,dudt_max)), policy_grads = jax.value_and_grad(policy_loss_fn,
                                                                                                   has_aux=True)(

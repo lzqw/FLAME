@@ -149,12 +149,10 @@ class MeanFlow:
 
     def reverse_weighted_p_loss(self, weights: jax.Array, model: MeanFlowModel, r: jax.Array, t: jax.Array,
                                 x_start: jax.Array, noise: jax.Array, x_t: jax.Array):
-        u = x_start - noise  # Shape: (B, K, D)
+        u =  noise - x_start  # Shape: (B, K, D)
         B, K, D = x_start.shape
-
         # Flatten inputs for the model
         x_t_flat = jnp.repeat(jnp.expand_dims(x_t, axis=1), repeats=K, axis=1).reshape(B * K, D)
-
         # <<< FIX: Reshape r and t to be 1D vectors (B*K,) instead of 2D (B*K, 1)
         r_flat = jnp.repeat(jnp.expand_dims(r, axis=1), repeats=K, axis=1).reshape(B * K)
         t_flat = jnp.repeat(jnp.expand_dims(t, axis=1), repeats=K, axis=1).reshape(B * K)
