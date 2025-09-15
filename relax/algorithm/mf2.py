@@ -140,8 +140,9 @@ class MF2(Algorithm):
                 r_final = jnp.where(mask, r0, r_swap)
                 t_final = jnp.where(mask, r0, t_swap)
 
-                loss = 0.1 * self.agent.flow.weighted_p_loss(flow_noise_key, q_weights, denoiser, r_final, t_final,
+                loss,max_dudt = self.agent.flow.weighted_p_loss(flow_noise_key, q_weights, denoiser, r_final, t_final,
                                                              jax.lax.stop_gradient(next_action))
+                # loss*
 
                 acts = self.agent.get_vanilla_action(acts_key, (policy_params, log_alpha, q1_params, q2_params), obs)
                 q1_target = self.agent.q(target_q1_params, obs, acts)
@@ -149,10 +150,10 @@ class MF2(Algorithm):
                 q_target = jnp.minimum(q1_target, q2_target)
                 loss += jnp.mean(-q_target)
 
-                return loss, (q_weights, scaled_q, q_mean, q_std)
+                return loss, (q_weights, scaled_q, q_mean, q_std,jnp.max(max_dudt))
                 # return loss, (0, 0, 0, 0)
 
-            (total_loss, (q_weights, scaled_q, q_mean, q_std)), policy_grads = jax.value_and_grad(policy_loss_fn,
+            (total_loss, (q_weights, scaled_q, q_mean, q_std,max_dudt)), policy_grads = jax.value_and_grad(policy_loss_fn,
                                                                                                   has_aux=True)(
                 policy_params)
 
@@ -236,6 +237,7 @@ class MF2(Algorithm):
                 "running_q_std": new_running_std,
                 "entropy_approx": 0.5 * self.agent.act_dim * jnp.log(
                     2 * jnp.pi * jnp.exp(1) * (0.1 * jnp.exp(log_alpha)) ** 2),
+                "max_dudt":max_dudt
             }
             return state, info
 

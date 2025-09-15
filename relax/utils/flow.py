@@ -145,92 +145,99 @@ class MeanFlow:
         u_pred, dudt = jax.jvp(model, (x_t, r, t), (v, zero_r, one_t))
         u_tgt = jax.lax.stop_gradient(v - (t - r)[:, None] * dudt)
         loss = weights * optax.squared_error(u_pred, u_tgt)
-        return loss.mean()
+        return loss.mean(),jax.lax.stop_gradient(dudt)
 
-    # def reverse_weighted_p_loss(self, weights: jax.Array, model: MeanFlowModel, r: jax.Array, t: jax.Array,
-    #                     x_start: jax.Array, noise: jax.Array,x_t: jax.Array,v_estimation:jax.Array):
-    #     u = x_start - noise
-    #     K = weights.shape[1]
-    #
-    #     x_t_expanded = jnp.repeat(jnp.expand_dims(x_t, axis=1), repeats=K, axis=1)
-    #     r_expanded = jnp.repeat(jnp.expand_dims(r, axis=1), repeats=K, axis=1)
-    #     t_expanded = jnp.repeat(jnp.expand_dims(t, axis=1), repeats=K, axis=1)
-    #
-    #     zero_r_tangent = jnp.zeros_like(r_expanded)  # Shape: (B, K, 1)
-    #     one_t_tangent = jnp.ones_like(t_expanded)  # Shape: (B, K, 1)
-    #
-    #     u_pred, dudt = jax.jvp(
-    #         model,
-    #         (x_t_expanded, r_expanded, t_expanded),
-    #         (u, zero_r_tangent, one_t_tangent)
-    #     )
-    #
-    #     u_tgt = jax.lax.stop_gradient(u - (t - r)[:, None] * dudt)
-    #     u_tgt_estimation = jax.lax.stop_gradient(jnp.sum(weights[:, :, None] * u_tgt, axis=1))
-    #     loss = optax.squared_error(u_pred, u_tgt_estimation)
-    #     return loss.mean()
     def reverse_weighted_p_loss(self, weights: jax.Array, model: MeanFlowModel, r: jax.Array, t: jax.Array,
                                 x_start: jax.Array, noise: jax.Array, x_t: jax.Array):
-        """
-        计算加权的 flow-matching 损失 (内存优化版)。
-
-        使用 jax.lax.scan 逐个处理 K 个样本，避免 OOM。
-        """
-        # u 是我们需要 jvp 计算其导数的方向向量
         u = x_start - noise  # Shape: (B, K, D)
         B, K, D = x_start.shape
 
-        # --- 核心修改：使用 jax.lax.scan 代替展平操作 ---
+        # Flatten inputs for the model
+        x_t_flat = jnp.repeat(jnp.expand_dims(x_t, axis=1), repeats=K, axis=1).reshape(B * K, D)
 
-        # 1. 准备 jax.lax.scan 的输入数据
-        # scan 会沿着数组的第一个维度进行迭代。
-        # 我们要迭代 K 个样本，所以需要将 u 的维度从 (B, K, D) 转置为 (K, B, D)
-        u_transposed = jnp.transpose(u, (1, 0, 2))  # Shape: (K, B, D)
+        # <<< FIX: Reshape r and t to be 1D vectors (B*K,) instead of 2D (B*K, 1)
+        r_flat = jnp.repeat(jnp.expand_dims(r, axis=1), repeats=K, axis=1).reshape(B * K)
+        t_flat = jnp.repeat(jnp.expand_dims(t, axis=1), repeats=K, axis=1).reshape(B * K)
 
-        # 准备 jvp 的不变参数 (primals 和部分 tangents)
-        # 这些张量的批次大小都是 B，是内存友好的
-        zero_tangent_r = jnp.zeros_like(r.squeeze(axis=-1))  # Shape: (B,)
-        one_tangent_t = jnp.ones_like(t.squeeze(axis=-1))  # Shape: (B,)
-        r_squeezed = r.squeeze(axis=-1)  # Shape: (B,)
-        t_squeezed = t.squeeze(axis=-1)  # Shape: (B,)
+        # Reshape tangents to match the primals
+        u_flat = u.reshape(B * K, D)
+        # Their shape will now correctly be (B * K,)
+        zero_tangent_flat = jnp.zeros_like(r_flat)
+        one_tangent_flat = jnp.ones_like(t_flat)
+        # one_tangent_flat = jnp.zeros_like(t_flat)
+        # Call jvp with the flattened tensors
+        u_pred_flat, dudt_flat = jax.jvp(
+            model,
+            (x_t_flat, r_flat, t_flat),
+            (u_flat, zero_tangent_flat, one_tangent_flat)
+        )
+        dudt_max_value=jnp.max(jnp.abs(dudt_flat))
+        # dudt_flat = jnp.clip(dudt_flat, min=-1, max=1)
+        # u_pred_flat = jnp.clip(u_pred_flat, min=-1, max=1)
+        #clip is efficient
 
-        # 2. 定义 scan 的循环体函数 (scan_body)
-        # 这个函数将在每个 K 上执行一次
-        def scan_body(carry, u_k):
-            # carry: 在本例中我们不需要在迭代间传递状态，所以忽略它
-            # u_k: 这是 u_transposed 的一个切片，shape 为 (B, D)
 
-            # 在单次循环内部，所有张量的批次大小都是 B
-            u_pred_k, dudt_k = jax.jvp(
-                model,
-                # Primals: x_t, r, t 的批次大小都是 B
-                (x_t, r_squeezed, t_squeezed),
-                # Tangents: u_k 的批次大小是 B
-                (u_k, zero_tangent_r, one_tangent_t)
-            )
-            # 返回 carry 和本次迭代的结果
-            return carry, (u_pred_k, dudt_k)
+        u_pred_b_k_d = u_pred_flat.reshape(B, K, D)
+        dudt = dudt_flat.reshape(B, K, D)
 
-        # 3. 执行 scan
-        # scan 会自动为我们循环 K 次，并收集每次的结果
-        # scan 的输入是 u_transposed，它有 K 个 (B, D) 的切片
-        _, (u_pred_stacked, dudt_stacked) = scan(scan_body, None, u_transposed)
+        # --- 核心修改：接受你的建议进行优化 ---
+        # 由于 u_pred 在 K 维度上是冗余的，我们只取第一个切片，将其降维
+        # Shape: (B, K, D) -> (B, D)
+        # u_pred = u_pred_b_k_d[:, 0, :]
+        u_pred = u_pred_b_k_d
 
-        # 4. 处理 scan 的输出
-        # scan 的输出结果是堆叠起来的，shape 为 (K, B, D)
-        # 我们需要将它们转置回我们习惯的 (B, K, D) 格式
-        u_pred = jnp.transpose(u_pred_stacked, (1, 0, 2))  # Shape: (B, K, D)
-        dudt = jnp.transpose(dudt_stacked, (1, 0, 2))  # Shape: (B, K, D)
+        # 目标 u_tgt 的计算仍然依赖于 K 个不同的噪声，所以这部分不变
+        u_tgt = jax.lax.stop_gradient(u - (t - r)[:, None] * dudt)
+        # u_tgt_estimation = jax.lax.stop_gradient(jnp.sum(weights[:, :, None] * u_tgt, axis=1))
+        u_tgt_estimation = jax.lax.stop_gradient(weights[:, :, None] * u_tgt)
 
-        # --- 修改结束 ---
+        loss = optax.squared_error(u_pred, u_tgt_estimation).mean()
 
-        # 5. 后续的损失计算逻辑和之前完全一样
-        u_tgt = u - (t - r)[:, None] * dudt
-        u_tgt = jax.lax.stop_gradient(u_tgt)
+        return loss, jax.lax.stop_gradient(dudt), jax.lax.stop_gradient(u_pred_b_k_d),jax.lax.stop_gradient(dudt),jax.lax.stop_gradient(dudt_max_value)
 
-        u_tgt_estimation = jnp.sum(weights[:, :, None] * u_tgt, axis=1)
-
-        squared_error = optax.squared_error(u_pred, jax.lax.stop_gradient(u_tgt_estimation))
-
-        loss = jnp.mean(weights[:, :, None] * squared_error)
-        return loss
+    # def reverse_weighted_p_loss(self, weights: jax.Array, model: MeanFlowModel, r: jax.Array, t: jax.Array,
+    #                             x_start: jax.Array, noise: jax.Array, x_t: jax.Array):
+    #     """
+    #     计算加权的 flow-matching 损失 (内存优化版)。
+    #
+    #     使用 jax.lax.scan 逐个处理 K 个样本，避免 OOM。
+    #     """
+    #
+    #     u = x_start - noise  # Shape: (B, K, D)
+    #     B, K, D = x_start.shape
+    #
+    #     u_transposed = jnp.transpose(u, (1, 0, 2))  # Shape: (K, B, D)
+    #
+    #     zero_tangent_r = jnp.zeros_like(r.squeeze(axis=-1))  # Shape: (B,)
+    #     one_tangent_t = jnp.ones_like(t.squeeze(axis=-1))  # Shape: (B,)
+    #     r_squeezed = r.squeeze(axis=-1)  # Shape: (B,)
+    #     t_squeezed = t.squeeze(axis=-1)  # Shape: (B,)
+    #
+    #     def scan_body(carry, u_k):
+    #
+    #         u_pred_k, dudt_k = jax.jvp(
+    #             model,
+    #             # Primals: x_t, r, t 的批次大小都是 B
+    #             (x_t, r_squeezed, t_squeezed),
+    #             # Tangents: u_k 的批次大小是 B
+    #             (u_k, zero_tangent_r, one_tangent_t)
+    #         )
+    #         # 返回 carry 和本次迭代的结果
+    #         return carry, (u_pred_k, dudt_k)
+    #
+    #
+    #     _, (u_pred_stacked, dudt_stacked) = scan(scan_body, None, u_transposed)
+    #
+    #
+    #     u_pred = jnp.transpose(u_pred_stacked, (1, 0, 2))  # Shape: (B, K, D)
+    #     dudt = jnp.transpose(dudt_stacked, (1, 0, 2))  # Shape: (B, K, D)
+    #
+    #     u_tgt = u - (t - r)[:, None] * dudt
+    #     u_tgt = jax.lax.stop_gradient(u_tgt)
+    #
+    #     u_tgt_estimation = jnp.sum(weights[:, :, None] * u_tgt, axis=1)
+    #
+    #     squared_error = optax.squared_error(u_pred, jax.lax.stop_gradient(u_tgt_estimation))
+    #
+    #     loss = jnp.mean(weights[:, :, None] * squared_error)
+    #     return loss
