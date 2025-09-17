@@ -56,8 +56,9 @@ from relax.utils.log_diff import log_git_details
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
-    parser.add_argument("--alg", type=str, default="mf_sac")
-    parser.add_argument("--env", type=str, default="Ant-v4")
+    parser.add_argument("--alg", type=str, default="rf_sac")
+    parser.add_argument("--env", type=str, default="InvertedPendulum-v5")
+    ##Hopper-v5,Ant-V4,HalfCheetah-v5,Walker2d-v5,Swimmer-v5,InvertedPendulum-v4,
     parser.add_argument("--suffix", type=str, default="test_use_atp1")
     parser.add_argument("--num_vec_envs", type=int, default=2)
     parser.add_argument("--hidden_num", type=int, default=3)

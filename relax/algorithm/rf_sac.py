@@ -134,11 +134,12 @@ class RFSAC(Algorithm):
             t = jnp.expand_dims(t, axis=1)
             noise_sample = jax.random.normal(flow_noise_key, action.shape)
 
+
             def q_sample(t: int, x_start: jax.Array, noise: jax.Array):
                 return t * x_start + (1 - t) * noise
 
             noisy_actions = q_sample(t, action, noise_sample)
-
+            noisy_actions=noisy_actions.clip(-1,1)
 
             #TODO: is a1=(1/t)at+(1-t)/t*et or a1=(1/t)at-(1-t)/t*et
             noisy_actions_repeat = jnp.repeat(jnp.expand_dims(noisy_actions, axis=1), axis=1, repeats=self.K)
@@ -174,9 +175,9 @@ class RFSAC(Algorithm):
                     def reverse_weighted_p_loss(self,  model: FlowModel, t: jax.Array,
                         x_t: jax.Array, u_estimation:jax.Array):
                 """
-                return loss, (jnp.sum(weight[:,:,None]), u_estimation, jnp.mean(jnp.sum(weight[:,:,None])), jnp.std(jnp.sum(weight[:,:,None])))
+                return loss, (jnp.sum(weight[:,:,None]), u_estimation, jnp.mean(critic), jnp.std(critic))
 
-            (total_loss, (q_weights, scaled_q, q_mean, q_std)), policy_grads = jax.value_and_grad(policy_loss_fn, has_aux=True)(policy_params)
+            (total_loss, (weight, u_estimation, critic_mean, critic_std)), policy_grads = jax.value_and_grad(policy_loss_fn, has_aux=True)(policy_params)
 
             # update alpha
             def log_alpha_loss_fn(log_alpha: jax.Array) -> jax.Array:
@@ -223,8 +224,8 @@ class RFSAC(Algorithm):
             target_q2_params = delay_target_update(q2_params, target_q2_params, self.tau)
             target_policy_params = delay_target_update(policy_params, target_policy_params, self.tau)
 
-            new_running_mean = running_mean + 0.001 * (q_mean - running_mean)
-            new_running_std = running_std + 0.001 * (q_std - running_std)
+            new_running_mean = running_mean + 0.001 * (critic_mean - running_mean)
+            new_running_std = running_std + 0.001 * (critic_std - running_std)
 
             state = Diffv2TrainState(
                 params=Diffv2Params(q1_params, q2_params, target_q1_params, target_q2_params, policy_params, target_policy_params, log_alpha),
@@ -242,12 +243,14 @@ class RFSAC(Algorithm):
                 "q2_loss": q2_loss,
                 "policy_loss": total_loss,
                 "alpha": jnp.exp(log_alpha),
-                "q_weights_std": jnp.std(q_weights),
-                "q_weights_mean": jnp.mean(q_weights),
-                "q_weights_min": jnp.min(q_weights),
-                "q_weights_max": jnp.max(q_weights),
-                "scale_q_mean": jnp.mean(scaled_q),
-                "scale_q_std": jnp.std(scaled_q),
+                "weights_std": jnp.std(weight),
+                "weights_mean": jnp.mean(weight),
+                "weights_min": jnp.min(weight),
+                "weights_max": jnp.max(weight),
+                "u_estimation_mean": jnp.mean(u_estimation),
+                "u_estimation_std": jnp.std(u_estimation),
+                "critic_mean": critic_mean,
+                "critic_std": critic_std,
                 "running_q_mean": new_running_mean,
                 "running_q_std": new_running_std,
                 "entropy_approx": 0.5 * self.agent.act_dim * jnp.log( 2 * jnp.pi * jnp.exp(1) * (0.1 * jnp.exp(log_alpha)) ** 2),

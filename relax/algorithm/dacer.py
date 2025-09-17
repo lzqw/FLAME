@@ -144,8 +144,13 @@ class DACER(Algorithm):
             total_loss, policy_grads = jax.value_and_grad(policy_loss_fn)(policy_params)
 
             # update alpha
+            # def log_alpha_loss_fn(log_alpha: jax.Array) -> jax.Array:
+            #     log_alpha_loss = -jnp.mean(log_alpha * (-entropy + self.agent.target_entropy))
+            #     return log_alpha_loss
+
             def log_alpha_loss_fn(log_alpha: jax.Array) -> jax.Array:
-                log_alpha_loss = -jnp.mean(log_alpha * (-entropy + self.agent.target_entropy))
+                approx_entropy = 0.5 * self.agent.act_dim * jnp.log( 2 * jnp.pi * jnp.exp(1) * (0.1 * jnp.exp(log_alpha)) ** 2)
+                log_alpha_loss = -1 * log_alpha * (-1 * jax.lax.stop_gradient(approx_entropy) + self.agent.target_entropy)
                 return log_alpha_loss
 
             # update networks
