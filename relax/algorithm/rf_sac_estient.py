@@ -245,7 +245,7 @@ class RFSACESTIENT(Algorithm):
                 params=Diffv2Params(q1_params, q2_params, target_q1_params, target_q2_params, policy_params, target_policy_params, log_alpha),
                 opt_state=Diffv2OptStates(q1=q1_opt_state, q2=q2_opt_state, policy=policy_opt_state, log_alpha=log_alpha_opt_state),
                 step=step + 1,
-                entropy=jnp.float32(0.0),
+                entropy=entropy,
                 running_mean=new_running_mean,
                 running_std=new_running_std
             )
@@ -267,7 +267,7 @@ class RFSACESTIENT(Algorithm):
                 "critic_std": critic_std,
                 "running_q_mean": new_running_mean,
                 "running_q_std": new_running_std,
-                "entropy_approx": 0.5 * self.agent.act_dim * jnp.log( 2 * jnp.pi * jnp.exp(1) * (0.1 * jnp.exp(log_alpha)) ** 2),
+                "entropy_approx": entropy,
             }
             return state, info
 
