@@ -27,6 +27,7 @@ class Diffv2TrainState(NamedTuple):
     running_mean: float
     running_std: float
 
+
 class RF(Algorithm):
 
     def __init__(
@@ -78,6 +79,7 @@ class RF(Algorithm):
             running_std=jnp.float32(1.0)
         )
         self.use_ema = use_ema
+        # self.temperature = temperature
 
         @jax.jit
         def stateless_update(
@@ -100,7 +102,8 @@ class RF(Algorithm):
                 q = jnp.minimum(q1, q2)
                 return q
 
-            next_action = self.agent.get_action(next_eval_key, (policy_params, log_alpha, q1_params, q2_params), next_obs)
+            next_action = self.agent.get_action(next_eval_key, (policy_params, log_alpha, q1_params, q2_params),
+                                                next_obs)
             q1_target = self.agent.q(target_q1_params, next_obs, next_action)
             q2_target = self.agent.q(target_q2_params, next_obs, next_action)
             q_target = jnp.minimum(q1_target, q2_target)  # - jnp.exp(log_alpha) * next_logp
@@ -118,27 +121,34 @@ class RF(Algorithm):
             q1_params = optax.apply_updates(q1_params, q1_update)
             q2_params = optax.apply_updates(q2_params, q2_update)
 
-
             def policy_loss_fn(policy_params) -> jax.Array:
                 q_min = get_min_q(next_obs, next_action)
                 q_mean, q_std = q_min.mean(), q_min.std()
-                # modified in rf_v of the visual branch
                 norm_q = q_min - running_mean / running_std
                 scaled_q = norm_q.clip(-3., 3.) / jnp.exp(log_alpha)
                 q_weights = jnp.exp(scaled_q)
+                # norm_q = q_min / running_std
+                # scaled_q = norm_q / self.temperature
+                # q_weights = jnp.exp(scaled_q)
+
                 def denoiser(t, x):
                     return self.agent.policy(policy_params, next_obs, x, t)
+
                 t = jax.random.uniform(flow_time_key, shape=(next_obs.shape[0],), minval=0.0, maxval=1.0)
                 loss = self.agent.flow.weighted_p_loss(flow_noise_key, q_weights, denoiser, t,
-                                                            jax.lax.stop_gradient(next_action))
+                                                       jax.lax.stop_gradient(next_action))
                 return loss, (q_weights, scaled_q, q_mean, q_std)
 
-            (total_loss, (q_weights, scaled_q, q_mean, q_std)), policy_grads = jax.value_and_grad(policy_loss_fn, has_aux=True)(policy_params)
+            (total_loss, (q_weights, scaled_q, q_mean, q_std)), policy_grads = jax.value_and_grad(policy_loss_fn,
+                                                                                                  has_aux=True)(
+                policy_params)
 
             # update alpha
             def log_alpha_loss_fn(log_alpha: jax.Array) -> jax.Array:
-                approx_entropy = 0.5 * self.agent.act_dim * jnp.log( 2 * jnp.pi * jnp.exp(1) * (0.1 * jnp.exp(log_alpha)) ** 2)
-                log_alpha_loss = -1 * log_alpha * (-1 * jax.lax.stop_gradient(approx_entropy) + self.agent.target_entropy)
+                approx_entropy = 0.5 * self.agent.act_dim * jnp.log(
+                    2 * jnp.pi * jnp.exp(1) * (0.1 * jnp.exp(log_alpha)) ** 2)
+                log_alpha_loss = -1 * log_alpha * (
+                        -1 * jax.lax.stop_gradient(approx_entropy) + self.agent.target_entropy)
                 return log_alpha_loss
 
             # update networks
@@ -158,7 +168,8 @@ class RF(Algorithm):
             def delay_alpha_param_update(optim, params, opt_state):
                 return jax.lax.cond(
                     step % self.delay_alpha_update == 0,
-                    lambda params, opt_state: param_update(optim, params, jax.grad(log_alpha_loss_fn)(params), opt_state),
+                    lambda params, opt_state: param_update(optim, params, jax.grad(log_alpha_loss_fn)(params),
+                                                           opt_state),
                     lambda params, opt_state: (params, opt_state),
                     params, opt_state
                 )
@@ -173,7 +184,8 @@ class RF(Algorithm):
 
             q1_params, q1_opt_state = param_update(self.optim, q1_params, q1_grads, q1_opt_state)
             q2_params, q2_opt_state = param_update(self.optim, q2_params, q2_grads, q2_opt_state)
-            policy_params, policy_opt_state = delay_param_update(self.policy_optim, policy_params, policy_grads, policy_opt_state)
+            policy_params, policy_opt_state = delay_param_update(self.policy_optim, policy_params, policy_grads,
+                                                                 policy_opt_state)
             log_alpha, log_alpha_opt_state = delay_alpha_param_update(self.alpha_optim, log_alpha, log_alpha_opt_state)
 
             target_q1_params = delay_target_update(q1_params, target_q1_params, self.tau)
@@ -184,8 +196,10 @@ class RF(Algorithm):
             new_running_std = running_std + 0.001 * (q_std - running_std)
 
             state = Diffv2TrainState(
-                params=Diffv2Params(q1_params, q2_params, target_q1_params, target_q2_params, policy_params, target_policy_params, log_alpha),
-                opt_state=Diffv2OptStates(q1=q1_opt_state, q2=q2_opt_state, policy=policy_opt_state, log_alpha=log_alpha_opt_state),
+                params=Diffv2Params(q1_params, q2_params, target_q1_params, target_q2_params, policy_params,
+                                    target_policy_params, log_alpha),
+                opt_state=Diffv2OptStates(q1=q1_opt_state, q2=q2_opt_state, policy=policy_opt_state,
+                                          log_alpha=log_alpha_opt_state),
                 step=step + 1,
                 entropy=jnp.float32(0.0),
                 running_mean=new_running_mean,
@@ -207,7 +221,8 @@ class RF(Algorithm):
                 "scale_q_std": jnp.std(scaled_q),
                 "running_q_mean": new_running_mean,
                 "running_q_std": new_running_std,
-                "entropy_approx": 0.5 * self.agent.act_dim * jnp.log( 2 * jnp.pi * jnp.exp(1) * (0.1 * jnp.exp(log_alpha)) ** 2),
+                "entropy_approx": 0.5 * self.agent.act_dim * jnp.log(
+                    2 * jnp.pi * jnp.exp(1) * (0.1 * jnp.exp(log_alpha)) ** 2),
             }
             return state, info
 
@@ -216,7 +231,7 @@ class RF(Algorithm):
                                         stateless_get_vanilla_action_step=self.agent.get_vanilla_action_step)
 
     def get_policy_params(self):
-        return (self.state.params.policy, self.state.params.log_alpha, self.state.params.q1, self.state.params.q2 )
+        return (self.state.params.policy, self.state.params.log_alpha, self.state.params.q1, self.state.params.q2)
 
     def get_policy_params_to_save(self):
         return (self.state.params.target_poicy, self.state.params.log_alpha, self.state.params.q1, self.state.params.q2)

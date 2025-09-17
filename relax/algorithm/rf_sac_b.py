@@ -134,8 +134,8 @@ class RFSACB(Algorithm):
             t = jnp.expand_dims(t, axis=1)
 
             #choose to use sampled actions
-            # action=next_action
-            action = jax.random.uniform(action_sample_key, action.shape, minval=-1, maxval=1)
+            action=next_action
+            # action = jax.random.uniform(action_sample_key, action.shape, minval=-1, maxval=1)
             # tilde_at = new_action
 
             noise_sample = jax.random.normal(flow_noise_key, action.shape)
