@@ -122,10 +122,6 @@ class RFSACESTIENT(Algorithm):
 
             (q1_loss, q1), q1_grads = jax.value_and_grad(q_loss_fn, has_aux=True)(q1_params)
             (q2_loss, q2), q2_grads = jax.value_and_grad(q_loss_fn, has_aux=True)(q2_params)
-            q1_update, q1_opt_state = self.optim.update(q1_grads, q1_opt_state)
-            q2_update, q2_opt_state = self.optim.update(q2_grads, q2_opt_state)
-            q1_params = optax.apply_updates(q1_params, q1_update)
-            q2_params = optax.apply_updates(q2_params, q2_update)
 
 
             def cal_entropy():

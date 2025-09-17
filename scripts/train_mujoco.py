@@ -57,14 +57,14 @@ from relax.utils.log_diff import log_git_details
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
-    parser.add_argument("--alg", type=str, default="rf_sac_estient")
-    parser.add_argument("--env", type=str, default="Ant-v4")
+    parser.add_argument("--alg", type=str, default="rf_sac")
+    parser.add_argument("--env", type=str, default="Walker2d-v5")
     ##Hopper-v5,Ant-V4,HalfCheetah-v5,Walker2d-v5,Swimmer-v5,InvertedPendulum-v4,
     parser.add_argument("--suffix", type=str, default="test_use_atp1")
-    parser.add_argument("--num_vec_envs", type=int, default=2)
+    parser.add_argument("--num_vec_envs", type=int, default=4)
     parser.add_argument("--hidden_num", type=int, default=3)
     parser.add_argument("--hidden_dim", type=int, default=256)
-    parser.add_argument("--diffusion_steps", type=int, default=5)  #SET 1 FOT MF BASED ALGORITHM
+    parser.add_argument("--diffusion_steps", type=int, default=1)  #SET 1 FOT MF BASED ALGORITHM
     parser.add_argument("--diffusion_steps_test", type=int, default=20)
     parser.add_argument("--diffusion_hidden_dim", type=int, default=256)
     parser.add_argument("--start_step", type=int, default=int(3e4)) # other envs 3e4
@@ -78,7 +78,7 @@ if __name__ == "__main__":
     parser.add_argument("--noise_scale", type=float, default=0.1)
     parser.add_argument("--target_entropy_scale", type=float, default=1.5)
     parser.add_argument("--replay_buffer_size", type=int, default=int(1e6))
-    parser.add_argument("--debug", default=True)
+    parser.add_argument("--debug", default=False)
     parser.add_argument("--use_ema_policy", default=True, action="store_true")
     parser.add_argument("--sample_k", type=int, default=200)
     args = parser.parse_args()
