@@ -171,22 +171,31 @@ class RFSACESTIENT(Algorithm):
             devices = jax.devices()
             compute_Q_DDP = partial(shard_map, mesh=Mesh(devices, ('i',)), in_specs=(P('i'), P('i')), out_specs=(P('i')))(get_min_q)
             critic = compute_Q_DDP( observations_repeat, clean_samples)  # batch_size, K
-            weight = nn.softmax((1 / jnp.exp(log_alpha)) * critic, axis=1)
-            u_estimation = jnp.sum(weight[:,:,None] * (clean_samples-noise), axis=1)
+            critic=critic*3. / jnp.exp(log_alpha)
+            q_mean, q_std = critic.mean(), critic.std()
+            Z = jax.nn.logsumexp(critic, axis=1, keepdims=True)  # [batch_size, 1]
+            q_weights = jnp.exp(critic - Z) # [batch_size, mc_num]
 
-            #eps_estimation = -jnp.sum(weight[:, :, None] * noise, axis=1)
-
+            clean_samples_reshape=clean_samples.reshape(-1, clean_samples.shape[-1])
+            obs_reshape = observations_repeat.reshape(-1, observations_repeat.shape[-1])
+            noise_reshape=noise.reshape(-1, noise.shape[-1])
+            u=clean_samples_reshape-noise_reshape
+            t_reshape = jnp.repeat(t.squeeze(), repeats=self.K)
+            noisy_actions_reshape=noisy_actions_repeat.reshape(-1, noisy_actions_repeat.shape[-1])
+            weight_reshape=q_weights.reshape(-1,1)
+            #clean_samples: batch_size, K, action_dim,
             def policy_loss_fn(policy_params) -> jax.Array:
 
                 def denoiser(t, x):
-                    return self.agent.policy(policy_params, obs, x, t)
-                loss = self.agent.flow.reverse_weighted_p_loss(denoiser, t, noisy_actions,
-                                                            jax.lax.stop_gradient(u_estimation))
+                    return self.agent.policy(policy_params, obs_reshape, x, t)
+                loss = self.agent.flow.reverse_weighted_p_loss2(denoiser, t_reshape, noisy_actions_reshape,
+                                                                jax.lax.stop_gradient(weight_reshape),
+                                                            jax.lax.stop_gradient(u))
                 """
                     def reverse_weighted_p_loss(self,  model: FlowModel, t: jax.Array,
                         x_t: jax.Array, u_estimation:jax.Array):
                 """
-                return loss, (jnp.sum(weight[:,:,None]), u_estimation, jnp.mean(critic), jnp.std(critic))
+                return loss, (weight_reshape, critic, q_mean, q_std)
 
             (total_loss, (weight, u_estimation, critic_mean, critic_std)), policy_grads = jax.value_and_grad(policy_loss_fn, has_aux=True)(policy_params)
 

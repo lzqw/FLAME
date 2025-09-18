@@ -69,6 +69,13 @@ class OTFlow:
         loss = optax.squared_error(v_pred, u_estimation)
         return loss.mean()
 
+    def reverse_weighted_p_loss2(self,  model: FlowModel, t: jax.Array,
+                        x_t: jax.Array,weight:jax.Array, u:jax.Array):
+        # t_squeezed = jnp.squeeze(t)
+        v_pred = model(t, x_t)
+        loss = weight * optax.squared_error(v_pred, u)
+        return loss.mean()
+
     def weighted_p_loss_coupled(self, noise: jax.Array, weights: jax.Array, model: FlowModel, t: jax.Array,
                         x_start: jax.Array):
         if len(weights.shape) == 1:
