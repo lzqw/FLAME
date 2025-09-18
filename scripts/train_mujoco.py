@@ -64,7 +64,7 @@ if __name__ == "__main__":
     parser.add_argument("--num_vec_envs", type=int, default=2)
     parser.add_argument("--hidden_num", type=int, default=3)
     parser.add_argument("--hidden_dim", type=int, default=256)
-    parser.add_argument("--diffusion_steps", type=int, default=1)  #SET 1 FOT MF BASED ALGORITHM
+    parser.add_argument("--diffusion_steps", type=int, default=20)  #SET 1 FOT MF BASED ALGORITHM
     parser.add_argument("--diffusion_steps_test", type=int, default=1)
     parser.add_argument("--diffusion_hidden_dim", type=int, default=256)
     parser.add_argument("--start_step", type=int, default=int(3e4)) # other envs 3e4
@@ -75,7 +75,7 @@ if __name__ == "__main__":
     parser.add_argument("--delay_alpha_update", type=float, default=2000)
     parser.add_argument("--seed", type=int, default=100)
     parser.add_argument("--num_particles", type=int, default=32)
-    parser.add_argument("--noise_scale", type=float, default=0.1)
+    parser.add_argument("--noise_scale", type=float, default=0.2)
     parser.add_argument("--target_entropy_scale", type=float, default=1.5)
     parser.add_argument("--replay_buffer_size", type=int, default=int(1e6))
     parser.add_argument("--debug", default=False)
