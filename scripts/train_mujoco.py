@@ -57,6 +57,7 @@ from relax.utils.log_diff import log_git_details
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
+    #python scripts/train_mujoco.py --env HalfCheetah-v5 --diffusion_steps 20 --alg rf_sac_estient  --noise_scale 0.1 the best for halfcheetah
     parser.add_argument("--alg", type=str, default="rf_sac_estient")
     parser.add_argument("--env", type=str, default="HalfCheetah-v5")
     ##Hopper-v5,Ant-V4,HalfCheetah-v5,Walker2d-v5,Swimmer-v5,InvertedPendulum-v4,
