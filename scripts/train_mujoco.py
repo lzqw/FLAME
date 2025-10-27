@@ -62,7 +62,7 @@ if __name__ == "__main__":
     parser.add_argument("--env", type=str, default="Reacher-v5")
     ##Hopper-v5,Ant-V4,HalfCheetah-v5,Walker2d-v5,Swimmer-v5,InvertedPendulum-v4,
     parser.add_argument("--suffix", type=str, default="test_use_atp1")
-    parser.add_argument("--num_vec_envs", type=int, default=2)
+    parser.add_argument("--num_vec_envs", type=int, default=10)
     parser.add_argument("--hidden_num", type=int, default=3)
     parser.add_argument("--hidden_dim", type=int, default=256)
     parser.add_argument("--diffusion_steps", type=int, default=20)  #SET 1 FOT MF BASED ALGORITHM
@@ -81,7 +81,7 @@ if __name__ == "__main__":
     parser.add_argument("--replay_buffer_size", type=int, default=int(1e6))
     parser.add_argument("--debug", default=False)
     parser.add_argument("--use_ema_policy", default=True, action="store_true")
-    parser.add_argument("--sample_k", type=int, default=400)
+    parser.add_argument("--sample_k", type=int, default=200)
     args = parser.parse_args()
 
     if args.debug:
