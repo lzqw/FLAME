@@ -59,7 +59,7 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     #python scripts/train_mujoco.py --env HalfCheetah-v5 --diffusion_steps 20 --alg rf_sac_estient  --noise_scale 0.1 the best for halfcheetah
     parser.add_argument("--alg", type=str, default="rf_sac_ent")
-    parser.add_argument("--env", type=str, default="Reacher-v5")
+    parser.add_argument("--env", type=str, default="Hopper-v5")
     ##Hopper-v5,Ant-V4,HalfCheetah-v5,Walker2d-v5,Swimmer-v5,InvertedPendulum-v4,
     parser.add_argument("--suffix", type=str, default="test_use_atp1")
     parser.add_argument("--num_vec_envs", type=int, default=10)
@@ -81,7 +81,7 @@ if __name__ == "__main__":
     parser.add_argument("--replay_buffer_size", type=int, default=int(1e6))
     parser.add_argument("--debug", default=False)
     parser.add_argument("--use_ema_policy", default=True, action="store_true")
-    parser.add_argument("--sample_k", type=int, default=200)
+    parser.add_argument("--sample_k", type=int, default=400)
     parser.add_argument("--fix_alpha", type=bool, default=True)
     parser.add_argument("--alpha", type=float, default=0.1)
     args = parser.parse_args()
@@ -272,7 +272,7 @@ if __name__ == "__main__":
                                           num_particles=args.num_particles,
                                           noise_scale=args.noise_scale,
                                           target_entropy_scale=args.target_entropy_scale,
-                                            fix_alpha=args.fix_alpha,
+                                            fixed_alpha=args.fix_alpha,
                                               alpha_value=args.alpha)
         algorithm = RFSACENT(agent, params, lr=args.lr, alpha_lr=args.alpha_lr,
                            delay_alpha_update=args.delay_alpha_update,
