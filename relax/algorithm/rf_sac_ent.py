@@ -50,7 +50,8 @@ class RFSACENT(Algorithm):
         reward_scale: float = 0.2,
         num_samples: int = 200,
         use_ema: bool = True,
-        sample_k:int = 500
+        sample_k:int = 500,
+        fixed_alpha: bool = False,
     ):
         self.agent = agent
         self.gamma = gamma
@@ -69,7 +70,7 @@ class RFSACENT(Algorithm):
         self.policy_optim = optax.adam(learning_rate=lr_schedule)
         self.alpha_optim = optax.adam(alpha_lr)
         self.entropy = 0.0
-
+        self.fixed_alpha=fixed_alpha
         self.state = Diffv2TrainState(
             params=params,
             opt_state=Diffv2OptStates(
@@ -198,7 +199,10 @@ class RFSACENT(Algorithm):
 
             # update alpha
             def log_alpha_loss_fn(log_alpha: jax.Array) -> jax.Array:
-                log_alpha_loss = -jnp.mean(log_alpha * (-entropy + self.agent.target_entropy))
+                if not self.fixed_alpha:
+                    log_alpha_loss = -jnp.mean(log_alpha * (-entropy + self.agent.target_entropy))
+                else:
+                    log_alpha_loss = jnp.array(0.0)
                 return log_alpha_loss
 
             # update networks
