@@ -27,6 +27,7 @@ class RFSACENTNet:
     q: Callable[[hk.Params, jax.Array, jax.Array], jax.Array]
     policy: Callable[[hk.Params, jax.Array, jax.Array, jax.Array], jax.Array]
     num_timesteps: int
+    num_ent_timesteps: int
     num_timesteps_test: int
     act_dim: int
     num_particles: int
@@ -186,7 +187,7 @@ class RFSACENTNet:
             return df_dt, dg_dt
 
         # Set up the reverse Euler integration using jax.lax.scan for performance
-        num_steps = self.num_timesteps
+        num_steps = self.num_ent_timesteps
         dt = -1.0 / num_steps
 
         def solver_step(state, t):
@@ -221,6 +222,7 @@ def create_rf_sac_ent_net(
     diffusion_hidden_sizes: Sequence[int],
     activation: Activation = jax.nn.relu,
     num_timesteps: int = 20,
+    num_ent_timesteps: int = 20,
     num_timesteps_test: int = 20,
     num_particles: int = 32,
     noise_scale: float = 0.05,
@@ -255,7 +257,7 @@ def create_rf_sac_ent_net(
     sample_act = jnp.zeros((1, act_dim))
     params = init(key, sample_obs, sample_act)
 
-    net = RFSACENTNet(q=q.apply, policy=policy.apply, num_timesteps=num_timesteps, num_timesteps_test=num_timesteps_test,
+    net = RFSACENTNet(q=q.apply, policy=policy.apply, num_timesteps=num_timesteps, num_ent_timesteps=num_ent_timesteps, num_timesteps_test=num_timesteps_test,
                 act_dim=act_dim,
                 target_entropy=-act_dim * target_entropy_scale, num_particles=num_particles, noise_scale=noise_scale,
                 noise_schedule='linear',
