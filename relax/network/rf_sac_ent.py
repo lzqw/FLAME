@@ -33,6 +33,7 @@ class RFSACENTNet:
     target_entropy: float
     noise_scale: float
     noise_schedule: str
+    fixed_alpha: bool
 
     @property
     def flow(self) -> OTFlow:
@@ -223,6 +224,8 @@ def create_rf_sac_ent_net(
     num_particles: int = 32,
     noise_scale: float = 0.05,
     target_entropy_scale=0.9,
+    fixed_alpha: bool = False,
+    alpha_value: float = 0.1,
 ) -> Tuple[RFSACENTNet, Diffv2Params]:
     # q = hk.without_apply_rng(hk.transform(lambda obs, act: DistributionalQNet2(hidden_sizes, activation)(obs, act)))
     q = hk.without_apply_rng(hk.transform(lambda obs, act: QNet(hidden_sizes, activation)(obs, act)))
@@ -239,7 +242,10 @@ def create_rf_sac_ent_net(
         policy_params = policy.init(policy_key, obs, act, 0)
         target_policy_params = policy_params
 
-        log_alpha = jnp.array(math.log(act.shape[1]), dtype=jnp.float32)  # math.log(3) or math.log(5) choose one
+        if not fixed_alpha:
+            log_alpha = jnp.array(math.log(act.shape[1]), dtype=jnp.float32)  # math.log(3) or math.log(5) choose one
+        else:
+            log_alpha = jnp.array(math.log(alpha_value), dtype=jnp.float32)
 
         return Diffv2Params(q1_params, q2_params, target_q1_params, target_q2_params, policy_params,
                             target_policy_params, log_alpha)
@@ -251,5 +257,6 @@ def create_rf_sac_ent_net(
     net = RFSACENTNet(q=q.apply, policy=policy.apply, num_timesteps=num_timesteps, num_timesteps_test=num_timesteps_test,
                 act_dim=act_dim,
                 target_entropy=-act_dim * target_entropy_scale, num_particles=num_particles, noise_scale=noise_scale,
-                noise_schedule='linear')
+                noise_schedule='linear',
+                fixed_alpha=fixed_alpha)
     return net, params

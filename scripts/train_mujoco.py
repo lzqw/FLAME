@@ -79,9 +79,11 @@ if __name__ == "__main__":
     parser.add_argument("--noise_scale", type=float, default=0.001)
     parser.add_argument("--target_entropy_scale", type=float, default=1.0)
     parser.add_argument("--replay_buffer_size", type=int, default=int(1e6))
-    parser.add_argument("--debug", default=True)
+    parser.add_argument("--debug", default=False)
     parser.add_argument("--use_ema_policy", default=True, action="store_true")
     parser.add_argument("--sample_k", type=int, default=200)
+    parser.add_argument("--fix_alpha", type=bool, default=True)
+    parser.add_argument("--alpha", type=float, default=0.1)
     args = parser.parse_args()
 
     if args.debug:
@@ -269,12 +271,15 @@ if __name__ == "__main__":
                                           num_timesteps_test=args.diffusion_steps_test,
                                           num_particles=args.num_particles,
                                           noise_scale=args.noise_scale,
-                                          target_entropy_scale=args.target_entropy_scale)
+                                          target_entropy_scale=args.target_entropy_scale,
+                                            fix_alpha=args.fix_alpha,
+                                              alpha_value=args.alpha)
         algorithm = RFSACENT(agent, params, lr=args.lr, alpha_lr=args.alpha_lr,
                            delay_alpha_update=args.delay_alpha_update,
                              lr_schedule_end=args.lr_schedule_end,
                              use_ema=args.use_ema_policy,
-                          sample_k=args.sample_k)
+                          sample_k=args.sample_k,
+                             fixed_alpha=args.fix_alpha)
 
 
     elif args.alg == 'mf_sac':
