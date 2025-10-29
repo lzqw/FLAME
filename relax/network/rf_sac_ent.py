@@ -102,6 +102,7 @@ class RFSACENTNet:
         entropy = -log_prob
 
         # Add exploration noise to the action that will be executed
+        # noisy_act = act + jax.random.normal(noise_key, act.shape) * jnp.exp(log_alpha) * self.noise_scale
         noisy_act = act + jax.random.normal(noise_key, act.shape) * jnp.float32(0.1) * self.noise_scale
 
         return noisy_act, entropy
