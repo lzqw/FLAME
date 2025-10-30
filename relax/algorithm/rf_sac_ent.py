@@ -169,7 +169,8 @@ class RFSACENT(Algorithm):
             compute_Q_DDP = partial(shard_map, mesh=Mesh(devices, ('i',)), in_specs=(P('i'), P('i')), out_specs=(P('i')))(get_min_q)
             critic = compute_Q_DDP( observations_repeat, clean_samples)  # batch_size, K
             # critic=critic*self.init_alpha / jnp.exp(log_alpha)
-            critic=critic*self.init_alpha / jnp.float32(0.1)
+            # critic=critic*self.init_alpha / jnp.float32(0.1)
+            critic=critic/jnp.float32(0.1)
             q_mean, q_std = critic.mean(), critic.std()
             Z = jax.nn.logsumexp(critic, axis=1, keepdims=True)  # [batch_size, 1]
             q_weights = jnp.exp(critic - Z) # [batch_size, mc_num]
