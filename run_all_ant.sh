@@ -19,19 +19,15 @@ echo ""
 
 
 
-python scripts/train_mujoco.py --env Ant-v5 --diffusion_steps 20 --alg rf_sac_ent  --noise_scale 0.001 --target_entropy_scale 1.0 --alpha 0.1
+python scripts/train_mujoco.py --env Ant-v5 --diffusion_steps 20 --alg rf_sac_ent  --total_step 2000000 --num_vec_envs 10
 
-python scripts/train_mujoco.py --env Ant-v5 --diffusion_steps 20 --alg rf_sac_ent  --noise_scale 1.0 --target_entropy_scale 1.0 --alpha 0.1
+python scripts/train_mujoco.py --env Ant-v5 --diffusion_steps 20 --alg rf_sac_ent  --total_step 2000000 --target_entropy_scale 1.0 --alpha 0.1 --num_vec_envs 2
 
-python scripts/train_mujoco.py --env Ant-v5 --diffusion_steps 20 --alg rf_sac_ent  --noise_scale 0.1 --target_entropy_scale 1.0 --alpha 0.1
+python scripts/train_mujoco.py --env Ant-v5 --diffusion_steps 20 --alg rf_sac_ent  --total_step 2000000 --target_entropy_scale 1.0 --alpha 0.05 --num_vec_envs 2
 
-python scripts/train_mujoco.py --env Ant-v5 --diffusion_steps 20 --alg rf_sac_ent  --noise_scale 0.01 --target_entropy_scale 1.0 --alpha 0.1
+python scripts/train_mujoco.py --env Ant-v5 --diffusion_steps 20 --alg rf_sac_ent  --total_step 2000000 --target_entropy_scale 1.0 --alpha 0.001 --num_vec_envs 2
 
-python scripts/train_mujoco.py --env Ant-v5 --diffusion_steps 20 --alg rf_sac_ent  --noise_scale 0.001 --target_entropy_scale 1.0 --alpha 0.5
-
-python scripts/train_mujoco.py --env Ant-v5 --diffusion_steps 20 --alg rf_sac_ent  --noise_scale 0.001 --target_entropy_scale 1.0 --alpha 1.0
-
-python scripts/train_mujoco.py --env Ant-v5 --diffusion_steps 20 --alg rf_sac_ent  --noise_scale 0.001 --target_entropy_scale 1.0 --alpha 0.01
+python scripts/train_mujoco.py --env Ant-v5 --diffusion_steps 20 --alg rf_sac_ent  --total_step 2000000 --target_entropy_scale 1.0 --alpha 0.005 --num_vec_envs 2
 
 # --- 所有任务执行完毕 ---
 echo "=================================================="

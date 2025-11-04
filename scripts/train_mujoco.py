@@ -71,12 +71,12 @@ if __name__ == "__main__":
     parser.add_argument("--diffusion_steps_test", type=int, default=1)
     parser.add_argument("--diffusion_hidden_dim", type=int, default=256)
     parser.add_argument("--start_step", type=int, default=int(1e5)) # other envs 3e4
-    parser.add_argument("--total_step", type=int, default=int(1e6))
+    parser.add_argument("--total_step", type=int, default=int(5e6))
     parser.add_argument("--lr", type=float, default=3e-4)
     parser.add_argument("--lr_schedule_end", type=float, default=3e-5)
     parser.add_argument("--alpha_lr", type=float, default=7e-3)
     parser.add_argument("--delay_alpha_update", type=float, default=2000)
-    parser.add_argument("--seed", type=int, default=100)
+    parser.add_argument("--seed", type=int, default=101)
     parser.add_argument("--num_particles", type=int, default=32)
     parser.add_argument("--noise_scale", type=float, default=0.001)
     parser.add_argument("--target_entropy_scale", type=float, default=1.0)
@@ -95,6 +95,9 @@ if __name__ == "__main__":
 
     master_seed = args.seed
     master_rng, _ = seeding(master_seed)
+    # env_seed, env_action_seed, eval_env_seed, buffer_seed, init_network_seed, train_seed = map(
+    #     int, master_rng.integers(0, 2**32 - 1, 6)
+    # )
     env_seed, env_action_seed, eval_env_seed, buffer_seed, init_network_seed, train_seed = map(
         int, master_rng.integers(0, 2**32 - 1, 6)
     )
@@ -314,7 +317,7 @@ if __name__ == "__main__":
 
     else:
         raise ValueError(f"Invalid algorithm {args.alg}!")
-
+    eval_env,_,_=create_env(args.env, eval_env_seed, env_action_seed)
     exp_dir = PROJECT_ROOT / "logs" / args.env / (args.alg + '_' + time.strftime("%Y-%m-%d_%H-%M-%S") + f'_s{args.seed}_{args.suffix}')
     trainer = OffPolicyTrainer(
         env=env,

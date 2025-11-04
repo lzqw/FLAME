@@ -30,7 +30,7 @@ class OffPolicyTrainer:
         sample_per_iteration: int = 1,
         update_per_iteration: int = 1,
         evaluate_env: Optional[Env] = None,
-        evaluate_every: int = 10000,
+        evaluate_every: int = 2000,
         evaluate_n_episode: int = 20,
         sample_log_n_episode: int = 10,
         update_log_n_step: int = 1000,
