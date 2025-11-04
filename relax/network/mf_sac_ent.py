@@ -32,6 +32,7 @@ class MFSACENTNet:
     target_entropy: float
     noise_scale: float
     noise_schedule: str
+    alpha_value: float
 
     @property
     def flow(self) -> MeanFlow:
@@ -230,6 +231,7 @@ def create_mf_sac_ent_net(
     num_particles: int = 32,
     noise_scale: float = 0.05,
     target_entropy_scale=0.9,
+    alpha_value: float = 0.1,
 ) -> Tuple[MFSACENTNet, Diffv2Params]:
     q = hk.without_apply_rng(hk.transform(lambda obs, act: QNet(hidden_sizes, activation)(obs, act)))
     policy = hk.without_apply_rng(
@@ -255,5 +257,6 @@ def create_mf_sac_ent_net(
     net = MFSACENTNet(q=q.apply, policy=policy.apply, num_timesteps=num_timesteps, num_timesteps_test=num_timesteps_test,
                 act_dim=act_dim,
                 target_entropy=-act_dim * target_entropy_scale, num_particles=num_particles, noise_scale=noise_scale,
-                noise_schedule='linear')
+                noise_schedule='linear',
+                      alpha_value=alpha_value)
     return net, params

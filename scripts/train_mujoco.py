@@ -26,7 +26,7 @@ from relax.algorithm.rf_sac_b import RFSACB
 from relax.algorithm.rf_sac_estient import RFSACESTIENT
 from relax.algorithm.mf_sac import MFSAC
 from relax.algorithm.rf_sac_ent import RFSACENT
-from relax.algorithm.mf_sac_ent import MFSACENT
+from relax.algorithm.mf_sac2_ent import MFSAC2ENT
 
 #mf_r2 stands for advanced reweighting method for Mean Flow SAC, which uses time related constant for reweighting
 
@@ -44,6 +44,7 @@ from relax.network.mf2 import create_mf2_net
 from relax.network.qvpo import create_qvpo_net
 from relax.network.mf_sac import create_mf_sac_net
 from relax.network.mf_sac_ent import create_mf_sac_ent_net
+from relax.network.mf_sac2_ent import create_mf_sac2_ent_net
 
 from relax.network.rf_sac import create_rf_sac_net
 from relax.network.rf_sac_b import create_rf_sac_b_net
@@ -60,8 +61,8 @@ from relax.utils.log_diff import log_git_details
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     #python scripts/train_mujoco.py --env HalfCheetah-v5 --diffusion_steps 20 --alg rf_sac_estient  --noise_scale 0.1 the best for halfcheetah
-    parser.add_argument("--alg", type=str, default="rf_sac_ent")
-    parser.add_argument("--env", type=str, default="Ant-v5")
+    parser.add_argument("--alg", type=str, default="mf_sac2_ent")
+    parser.add_argument("--env", type=str, default="Hopper-v5")
     ##Hopper-v5,Ant-V4,HalfCheetah-v5,Walker2d-v5,Swimmer-v5,InvertedPendulum-v4,
     parser.add_argument("--suffix", type=str, default="test_use_atp1")
     parser.add_argument("--num_vec_envs", type=int, default=2)
@@ -70,23 +71,22 @@ if __name__ == "__main__":
     parser.add_argument("--diffusion_steps", type=int, default=20)  #SET 1 FOT MF BASED ALGORITHM
     parser.add_argument("--diffusion_steps_test", type=int, default=1)
     parser.add_argument("--diffusion_hidden_dim", type=int, default=256)
-    parser.add_argument("--start_step", type=int, default=int(1e5)) # other envs 3e4
-    parser.add_argument("--total_step", type=int, default=int(5e6))
+    parser.add_argument("--start_step", type=int, default=int(3e4)) # other envs 3e4
+    parser.add_argument("--total_step", type=int, default=int(1e6))
     parser.add_argument("--lr", type=float, default=3e-4)
     parser.add_argument("--lr_schedule_end", type=float, default=3e-5)
     parser.add_argument("--alpha_lr", type=float, default=7e-3)
     parser.add_argument("--delay_alpha_update", type=float, default=2000)
-    parser.add_argument("--seed", type=int, default=101)
+    parser.add_argument("--seed", type=int, default=100)
     parser.add_argument("--num_particles", type=int, default=32)
     parser.add_argument("--noise_scale", type=float, default=0.001)
     parser.add_argument("--target_entropy_scale", type=float, default=1.0)
     parser.add_argument("--replay_buffer_size", type=int, default=int(1e6))
     parser.add_argument("--debug", default=False)
     parser.add_argument("--use_ema_policy", default=True, action="store_true")
-    parser.add_argument("--sample_k", type=int, default=500)
+    parser.add_argument("--sample_k", type=int, default=50)
     parser.add_argument("--fix_alpha", type=bool, default=False)
-    parser.add_argument("--alpha", type=float, default=0.01)
-
+    parser.add_argument("--alpha", type=float, default=0.1)
     args = parser.parse_args()
 
     if args.debug:
@@ -95,9 +95,6 @@ if __name__ == "__main__":
 
     master_seed = args.seed
     master_rng, _ = seeding(master_seed)
-    # env_seed, env_action_seed, eval_env_seed, buffer_seed, init_network_seed, train_seed = map(
-    #     int, master_rng.integers(0, 2**32 - 1, 6)
-    # )
     env_seed, env_action_seed, eval_env_seed, buffer_seed, init_network_seed, train_seed = map(
         int, master_rng.integers(0, 2**32 - 1, 6)
     )
@@ -295,12 +292,29 @@ if __name__ == "__main__":
                                           num_timesteps_test=args.diffusion_steps_test,
                                           num_particles=args.num_particles,
                                           noise_scale=args.noise_scale,
-                                          target_entropy_scale=args.target_entropy_scale)
+                                          target_entropy_scale=args.target_entropy_scale,
+                                              alpha_value=args.alpha)
         algorithm = MFSACENT(agent, params, lr=args.lr, alpha_lr=args.alpha_lr,
                            delay_alpha_update=args.delay_alpha_update,
                              lr_schedule_end=args.lr_schedule_end,
                              use_ema=args.use_ema_policy,
                           sample_k=args.sample_k)
+
+    elif args.alg == 'mf_sac2_ent':
+        def mish(x: jax.Array):
+            return x * jnp.tanh(jax.nn.softplus(x))
+        agent, params = create_mf_sac2_ent_net(init_network_key, obs_dim, act_dim, hidden_sizes, diffusion_hidden_sizes, mish,
+                                          num_timesteps=args.diffusion_steps,
+                                          num_timesteps_test=args.diffusion_steps_test,
+                                          num_particles=args.num_particles,
+                                          noise_scale=args.noise_scale,
+                                          target_entropy_scale=args.target_entropy_scale)
+        algorithm = MFSAC2ENT(agent, params, lr=args.lr, alpha_lr=args.alpha_lr,
+                           delay_alpha_update=args.delay_alpha_update,
+                             lr_schedule_end=args.lr_schedule_end,
+                             use_ema=args.use_ema_policy,
+                          sample_k=args.sample_k)
+
     elif args.alg == 'mf_sac':
         def mish(x: jax.Array):
             return x * jnp.tanh(jax.nn.softplus(x))
@@ -318,7 +332,7 @@ if __name__ == "__main__":
 
     else:
         raise ValueError(f"Invalid algorithm {args.alg}!")
-    eval_env,_,_=create_env(args.env, eval_env_seed, env_action_seed)
+
     exp_dir = PROJECT_ROOT / "logs" / args.env / (args.alg + '_' + time.strftime("%Y-%m-%d_%H-%M-%S") + f'_s{args.seed}_{args.suffix}')
     trainer = OffPolicyTrainer(
         env=env,
