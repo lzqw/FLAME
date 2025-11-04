@@ -107,11 +107,26 @@ class MFSACENT(Algorithm):
                 q = jnp.minimum(q1, q2)
                 return q
 
-            next_action = self.agent.get_action(next_eval_key, (policy_params, log_alpha, q1_params, q2_params),
-                                                next_obs)
+            # next_action = self.agent.get_action(next_eval_key, (policy_params, log_alpha, q1_params, q2_params),
+            #                                     next_obs)
+            #
+            # q1_target = self.agent.q(target_q1_params, next_obs, next_action)
+            # q2_target = self.agent.q(target_q2_params, next_obs, next_action)
+            # q_target = jnp.minimum(q1_target, q2_target)  # - jnp.exp(log_alpha) * next_logp
+            # q_backup = reward + (1 - done) * self.gamma * q_target
+
+            # Get next action and its entropy from the policy
+            next_action, next_entropy = self.agent.get_action_ent(next_eval_key,
+                                                                  (policy_params, log_alpha, q1_params, q2_params),
+                                                                  next_obs)
+
+            # Calculate target Q-values
             q1_target = self.agent.q(target_q1_params, next_obs, next_action)
             q2_target = self.agent.q(target_q2_params, next_obs, next_action)
-            q_target = jnp.minimum(q1_target, q2_target)  # - jnp.exp(log_alpha) * next_logp
+
+            # Add the entropy bonus to the target, which is the core of SAC
+            # q_target = jnp.minimum(q1_target, q2_target) + jnp.exp(log_alpha) * next_entropy
+            q_target = jnp.minimum(q1_target, q2_target) + jnp.float32(0.1) * next_entropy
             q_backup = reward + (1 - done) * self.gamma * q_target
 
             def q_loss_fn(q_params: hk.Params) -> jax.Array:
@@ -167,7 +182,7 @@ class MFSACENT(Algorithm):
             devices = jax.devices()
             compute_Q_DDP = partial(shard_map, mesh=Mesh(devices, ('i',)), in_specs=(P('i'), P('i')), out_specs=(P('i')))(get_min_q)
             critic = compute_Q_DDP( observations_repeat, clean_samples)  # batch_size, K
-            weight = nn.softmax((1 / jnp.exp(log_alpha)) * critic, axis=1)
+            weight = nn.softmax((1 / jnp.float32(0.1)) * critic, axis=1)
 
 
             u_estimation = jnp.sum(weight[:,:,None] * (clean_samples-noise), axis=1)
@@ -195,11 +210,15 @@ class MFSACENT(Algorithm):
                 policy_params)
 
             # update alpha
+            # def log_alpha_loss_fn(log_alpha: jax.Array) -> jax.Array:
+            #     approx_entropy = 0.5 * self.agent.act_dim * jnp.log(
+            #         2 * jnp.pi * jnp.exp(1) * (0.1 * jnp.exp(log_alpha)) ** 2)
+            #     log_alpha_loss = -1 * log_alpha * (
+            #             -1 * jax.lax.stop_gradient(approx_entropy) + self.agent.target_entropy)
+            #     return log_alpha_loss
             def log_alpha_loss_fn(log_alpha: jax.Array) -> jax.Array:
-                approx_entropy = 0.5 * self.agent.act_dim * jnp.log(
-                    2 * jnp.pi * jnp.exp(1) * (0.1 * jnp.exp(log_alpha)) ** 2)
-                log_alpha_loss = -1 * log_alpha * (
-                        -1 * jax.lax.stop_gradient(approx_entropy) + self.agent.target_entropy)
+                # Use the entropy computed from the next state's action
+                log_alpha_loss = -jnp.mean(log_alpha * jax.lax.stop_gradient(-next_entropy + self.agent.target_entropy))
                 return log_alpha_loss
 
             # update networks
@@ -272,8 +291,9 @@ class MFSACENT(Algorithm):
                 "scale_q_std": jnp.std(scaled_q),
                 "running_q_mean": new_running_mean,
                 "running_q_std": new_running_std,
-                "entropy_approx": 0.5 * self.agent.act_dim * jnp.log(
-                    2 * jnp.pi * jnp.exp(1) * (0.1 * jnp.exp(log_alpha)) ** 2),
+                # "entropy_approx": 0.5 * self.agent.act_dim * jnp.log(
+                #     2 * jnp.pi * jnp.exp(1) * (0.1 * jnp.exp(log_alpha)) ** 2),
+                "entropy_approx": jnp.mean(next_entropy),
                 "u_pred": u_pred,
                 "dudt": dudt_pred,
                 "dudt_max": dudt_max

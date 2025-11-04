@@ -35,6 +35,7 @@ class RFSACENTNet:
     noise_scale: float
     noise_schedule: str
     fixed_alpha: bool
+    alpha_value: float
 
     @property
     def flow(self) -> OTFlow:
@@ -66,6 +67,7 @@ class RFSACENTNet:
             q_best_ind = jnp.argmax(qs, axis=0, keepdims=True)
             act = jnp.take_along_axis(acts, q_best_ind[..., None], axis=0).squeeze(axis=0)
         # act = act + jax.random.normal(noise_key, act.shape) * jnp.exp(log_alpha) * self.noise_scale
+        # act = act + jax.random.normal(noise_key, act.shape) * jnp.float32(self.alpha_value) * self.noise_scale
         act = act + jax.random.normal(noise_key, act.shape) * jnp.float32(0.1) * self.noise_scale
         return act
 
@@ -104,8 +106,8 @@ class RFSACENTNet:
 
         # Add exploration noise to the action that will be executed
         # noisy_act = act + jax.random.normal(noise_key, act.shape) * jnp.exp(log_alpha) * self.noise_scale
+        # noisy_act = act + jax.random.normal(noise_key, act.shape) * jnp.float32(self.alpha_value) * self.noise_scale
         noisy_act = act + jax.random.normal(noise_key, act.shape) * jnp.float32(0.1) * self.noise_scale
-
         return noisy_act, entropy
 
     def get_vanilla_action(self, key: jax.Array, policy_params: hk.Params, obs: jax.Array) -> jax.Array:
@@ -262,5 +264,6 @@ def create_rf_sac_ent_net(
                 act_dim=act_dim,
                 target_entropy=-act_dim * target_entropy_scale, num_particles=num_particles, noise_scale=noise_scale,
                 noise_schedule='linear',
-                fixed_alpha=fixed_alpha)
+                fixed_alpha=fixed_alpha,
+                alpha_value=alpha_value)
     return net, params
