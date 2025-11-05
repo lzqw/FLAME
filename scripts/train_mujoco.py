@@ -271,8 +271,7 @@ if __name__ == "__main__":
             return x * jnp.tanh(jax.nn.softplus(x))
         agent, params = create_rf_sac_ent_net(init_network_key, obs_dim, act_dim, hidden_sizes, diffusion_hidden_sizes, mish,
                                           num_timesteps=args.diffusion_steps,
-                                          num_ent_timesteps_test=args.diffusion_steps_test,
-                                          num_timesteps_test=args.diffusion_steps_test,
+                                              num_timesteps_test=args.diffusion_steps_test,
                                           num_particles=args.num_particles,
                                           noise_scale=args.noise_scale,
                                           target_entropy_scale=args.target_entropy_scale,
