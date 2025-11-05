@@ -68,11 +68,11 @@ if __name__ == "__main__":
     parser.add_argument("--num_vec_envs", type=int, default=2)
     parser.add_argument("--hidden_num", type=int, default=3)
     parser.add_argument("--hidden_dim", type=int, default=256)
-    parser.add_argument("--diffusion_steps", type=int, default=20)  #SET 1 FOT MF BASED ALGORITHM
+    parser.add_argument("--diffusion_steps", type=int, default=1)  #SET 1 FOT MF BASED ALGORITHM
     parser.add_argument("--diffusion_steps_test", type=int, default=1)
     parser.add_argument("--diffusion_hidden_dim", type=int, default=256)
     parser.add_argument("--start_step", type=int, default=int(3e4)) # other envs 3e4
-    parser.add_argument("--total_step", type=int, default=int(1e6))
+    parser.add_argument("--total_step", type=int, default=int(2e6))
     parser.add_argument("--lr", type=float, default=3e-4)
     parser.add_argument("--lr_schedule_end", type=float, default=3e-5)
     parser.add_argument("--alpha_lr", type=float, default=7e-3)
@@ -84,7 +84,7 @@ if __name__ == "__main__":
     parser.add_argument("--replay_buffer_size", type=int, default=int(1e6))
     parser.add_argument("--debug", default=False)
     parser.add_argument("--use_ema_policy", default=True, action="store_true")
-    parser.add_argument("--sample_k", type=int, default=50)
+    parser.add_argument("--sample_k", type=int, default=400)
     parser.add_argument("--fix_alpha", type=bool, default=False)
     parser.add_argument("--alpha", type=float, default=0.1)
     args = parser.parse_args()

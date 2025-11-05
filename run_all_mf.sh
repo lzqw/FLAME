@@ -17,13 +17,19 @@ echo ""
 #echo "✅ Task 1/18 finished."
 #echo ""
 
+python scripts/train_mujoco.py --env Hopper-v5 --diffusion_steps 1 --alg mf_sac2_ent  --noise_scale 0.001 --target_entropy_scale 1.0
+python scripts/train_mujoco.py --env Pusher-v5 --diffusion_steps 1 --alg mf_sac2_ent  --noise_scale 0.001 --target_entropy_scale 1.0
+python scripts/train_mujoco.py --env Reacher-v5 --diffusion_steps 1 --alg mf_sac2_ent  --noise_scale 0.001 --target_entropy_scale 1.0
+python scripts/train_mujoco.py --env Swimmer-v5 --diffusion_steps 1 --alg mf_sac2_ent  --noise_scale 0.001 --target_entropy_scale 1.0
+python scripts/train_mujoco.py --env HalfCheetah-v5 --diffusion_steps 1 --alg mf_sac2_ent  --noise_scale 0.001 --target_entropy_scale 1.0
+python scripts/train_mujoco.py --env Walker2d-v5 --diffusion_steps 1 --alg mf_sac2_ent  --noise_scale 0.001 --target_entropy_scale 1.0
 
-python scripts/train_mujoco.py --env Hopper-v5 --diffusion_steps 1 --alg mf_sac_ent  --noise_scale 0.001 --target_entropy_scale 1.0
-python scripts/train_mujoco.py --env Pusher-v5 --diffusion_steps 1 --alg mf_sac_ent  --noise_scale 0.001 --target_entropy_scale 1.0
-python scripts/train_mujoco.py --env Reacher-v5 --diffusion_steps 1 --alg mf_sac_ent  --noise_scale 0.001 --target_entropy_scale 1.0
-python scripts/train_mujoco.py --env Swimmer-v5 --diffusion_steps 1 --alg mf_sac_ent  --noise_scale 0.001 --target_entropy_scale 1.0
-python scripts/train_mujoco.py --env HalfCheetah-v5 --diffusion_steps 1 --alg mf_sac_ent  --noise_scale 0.001 --target_entropy_scale 1.0
-python scripts/train_mujoco.py --env Walker2d-v5 --diffusion_steps 1 --alg mf_sac_ent  --noise_scale 0.001 --target_entropy_scale 1.0
+#python scripts/train_mujoco.py --env Hopper-v5 --diffusion_steps 1 --alg mf_sac_ent  --noise_scale 0.001 --target_entropy_scale 1.0
+#python scripts/train_mujoco.py --env Pusher-v5 --diffusion_steps 1 --alg mf_sac_ent  --noise_scale 0.001 --target_entropy_scale 1.0
+#python scripts/train_mujoco.py --env Reacher-v5 --diffusion_steps 1 --alg mf_sac_ent  --noise_scale 0.001 --target_entropy_scale 1.0
+#python scripts/train_mujoco.py --env Swimmer-v5 --diffusion_steps 1 --alg mf_sac_ent  --noise_scale 0.001 --target_entropy_scale 1.0
+#python scripts/train_mujoco.py --env HalfCheetah-v5 --diffusion_steps 1 --alg mf_sac_ent  --noise_scale 0.001 --target_entropy_scale 1.0
+#python scripts/train_mujoco.py --env Walker2d-v5 --diffusion_steps 1 --alg mf_sac_ent  --noise_scale 0.001 --target_entropy_scale 1.0
 # --- 所有任务执行完毕 ---
 echo "=================================================="
 echo "🎉 所有 18 个任务已全部执行完毕！脚本将退出。"
