@@ -17,16 +17,16 @@ echo ""
 #echo "✅ Task 1/18 finished."
 #echo ""
 
-#python scripts/train_mujoco.py --env Hopper-v5 --diffusion_steps 1 --alg mf_sac2_ent  --noise_scale 0.001 --target_entropy_scale 1.0
-#python scripts/train_mujoco.py --env Pusher-v5 --diffusion_steps 1 --alg mf_sac2_ent  --noise_scale 0.001 --target_entropy_scale 1.0
-#python scripts/train_mujoco.py --env Reacher-v5 --diffusion_steps 1 --alg mf_sac2_ent  --noise_scale 0.001 --target_entropy_scale 1.0
-#python scripts/train_mujoco.py --env Swimmer-v5 --diffusion_steps 1 --alg mf_sac2_ent  --noise_scale 0.001 --target_entropy_scale 1.0
-#python scripts/train_mujoco.py --env HalfCheetah-v5 --diffusion_steps 1 --alg mf_sac2_ent  --noise_scale 0.001 --target_entropy_scale 1.0
-python scripts/train_mujoco.py --env Walker2d-v5 --diffusion_steps 1 --alg mf_sac2_ent  --noise_scale 0.001 --target_entropy_scale 1.0
-python scripts/train_mujoco.py --env Humanoid-v5 --diffusion_steps 1 --alg mf_sac2_ent  --noise_scale 0.001 --target_entropy_scale 1.0
-python scripts/train_mujoco.py --env InvertedPendulum-v5 --diffusion_steps 1 --alg mf_sac2_ent  --noise_scale 0.001 --target_entropy_scale 1.0
-python scripts/train_mujoco.py --env Ant-v5 --diffusion_steps 1 --alg mf_sac2_ent  --noise_scale 0.001 --target_entropy_scale 1.0
-python scripts/train_mujoco.py --env InvertedDoublePendulum-v5 --diffusion_steps 1 --alg mf_sac2_ent  --noise_scale 0.001 --target_entropy_scale 1.0
+#python scripts/train_mujoco.py --env Hopper-v5 --diffusion_steps 1 --alg mf_sac2_ent  --noise_scale 0.001 --target_entropy_scale 1.0 --alpha 0.01
+#python scripts/train_mujoco.py --env Pusher-v5 --diffusion_steps 1 --alg mf_sac2_ent  --noise_scale 0.001 --target_entropy_scale 1.0 --alpha 0.01
+python scripts/train_mujoco.py --env Reacher-v5 --diffusion_steps 1 --alg mf_sac2_ent  --noise_scale 0.001 --target_entropy_scale 1.0 --alpha 0.01
+python scripts/train_mujoco.py --env Swimmer-v5 --diffusion_steps 1 --alg mf_sac2_ent  --noise_scale 0.001 --target_entropy_scale 1.0 --alpha 0.01
+python scripts/train_mujoco.py --env HalfCheetah-v5 --diffusion_steps 1 --alg mf_sac2_ent  --noise_scale 0.001 --target_entropy_scale 1.0 --alpha 0.01
+python scripts/train_mujoco.py --env Walker2d-v5 --diffusion_steps 1 --alg mf_sac2_ent  --noise_scale 0.001 --target_entropy_scale 1.0 --alpha 0.01
+python scripts/train_mujoco.py --env Humanoid-v5 --diffusion_steps 1 --alg mf_sac2_ent  --noise_scale 0.001 --target_entropy_scale 1.0 --alpha 0.01
+python scripts/train_mujoco.py --env InvertedPendulum-v5 --diffusion_steps 1 --alg mf_sac2_ent  --noise_scale 0.001 --target_entropy_scale 1.0 --alpha 0.01
+python scripts/train_mujoco.py --env Ant-v5 --diffusion_steps 1 --alg mf_sac2_ent  --noise_scale 0.001 --target_entropy_scale 1.0 --alpha 0.01
+python scripts/train_mujoco.py --env InvertedDoublePendulum-v5 --diffusion_steps 1 --alg mf_sac2_ent  --noise_scale 0.001 --target_entropy_scale 1.0 --alpha 0.01
 #python scripts/train_mujoco.py --env Hopper-v5 --diffusion_steps 1 --alg mf_sac_ent  --noise_scale 0.001 --target_entropy_scale 1.0
 #python scripts/train_mujoco.py --env Pusher-v5 --diffusion_steps 1 --alg mf_sac_ent  --noise_scale 0.001 --target_entropy_scale 1.0
 #python scripts/train_mujoco.py --env Reacher-v5 --diffusion_steps 1 --alg mf_sac_ent  --noise_scale 0.001 --target_entropy_scale 1.0
