@@ -174,7 +174,7 @@ class MFSACENT(Algorithm):
             devices = jax.devices()
             compute_Q_DDP = partial(shard_map, mesh=Mesh(devices, ('i',)), in_specs=(P('i'), P('i')), out_specs=(P('i')))(get_min_q)
             critic = compute_Q_DDP( observations_repeat, clean_samples)  # batch_size, K
-            weight = nn.softmax((1 / jnp.float32(0.1)) * critic, axis=1)
+            weight = nn.softmax((1 / jnp.float32(0.01)) * critic, axis=1)
 
 
             u_estimation = jnp.sum(weight[:,:,None] * (clean_samples-noise), axis=1)
