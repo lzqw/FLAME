@@ -99,6 +99,112 @@ class MF2SACENTNet:
         policy_params = (policy_params, log_alpha, q1_params, q2_params)
         return self.get_action(key, policy_params, obs)
 
+    def compute_log_likelihood(self, key: jax.Array, policy_params: hk.Params, obs: jax.Array,
+                               act: jax.Array) -> jax.Array:
+        """
+        Computes the log-likelihood of actions using the instantaneous change of variables formula.
+        This involves solving an ODE backwards in time with a reverse Euler solver.
+        """
+
+        def model_fn(t, x):
+            # The velocity model u_t(x) for a given observation.
+            # We fix r=0 and ensure it has the correct 1D shape (batch_size,).
+            r_val = jnp.zeros_like(t)
+            return self.policy(policy_params, obs, x, r_val, t)
+
+        # Base distribution p_0 is a standard normal
+        def log_p0(z):
+            return jax.scipy.stats.norm.logpdf(z).sum(axis=-1)
+
+        # We need a single random vector Z for the trace estimator for the entire trajectory
+        z_key, _ = jax.random.split(key)
+        z = jax.random.normal(z_key, act.shape)
+
+        # The dynamics of the augmented ODE system for [f(t), g(t)]
+        def ode_dynamics(state, t):
+            f_t, _ = state
+            # Function for VJP: u_t(f_t)
+            u_t_fn = lambda x: model_fn(t, x)
+            # Compute VJP to get Z^T * J
+            _, vjp_fn = jax.vjp(u_t_fn, f_t)
+            vjp_z = vjp_fn(z)[0]
+            # Hutchinson's trace estimator: trace(J) ≈ Z^T * J * Z
+            trace_term = jnp.sum(vjp_z * z, axis=-1)
+
+            df_dt = u_t_fn(f_t)
+            dg_dt = -trace_term
+            return df_dt, dg_dt
+
+        # Set up the reverse Euler integration using jax.lax.scan for performance
+        # num_steps = self.num_timesteps
+        num_steps = 20
+        dt = -1.0 / num_steps
+
+        def solver_step(state, t):
+            f_t, g_t = state
+            # Ensure t is a 1D tensor of shape (batch_size,) for the model
+            t_val = jnp.full((f_t.shape[0],), t)
+            df_dt, dg_dt = ode_dynamics(state, t_val)
+            f_next = f_t + df_dt * dt
+            g_next = g_t + dg_dt * dt
+            return (f_next, g_next), None
+
+        # Time steps for reverse integration from t=1 down to nearly t=0
+        timesteps = jnp.linspace(1.0, 1.0 / num_steps, num_steps)
+
+        # Initial state at t=1
+        initial_state = (act, jnp.zeros(act.shape[:-1]))
+
+        # Run the solver
+        final_state, _ = jax.lax.scan(solver_step, initial_state, timesteps)
+        f_0, g_0 = final_state
+
+        # Final log probability: log p_1(x) = log p_0(f(0)) - g(0)
+        log_p1 = log_p0(f_0) - g_0
+
+        return log_p1
+
+    def get_action_ent(self, key: jax.Array, policy_params: hk.Params, obs: jax.Array) -> Tuple[jax.Array, jax.Array]:
+        # Unpack params
+        policy_params_only, log_alpha, q1_params, q2_params = policy_params
+
+        # Define the model for sampling, which uses both r and t.
+        # For sampling, r is typically fixed to 0.
+        def model_fn(x, r, t):
+            return self.policy(policy_params_only, obs, x, r, t)
+
+        def sample(key: jax.Array) -> Union[jax.Array, jax.Array]:
+            act = self.flow.p_sample(key, model_fn, (*obs.shape[:-1], self.act_dim))
+            q1 = self.q(q1_params, obs, act)
+            q2 = self.q(q2_params, obs, act)
+            q = jnp.minimum(q1, q2)
+            return act.clip(-1, 1), q
+
+        # Split keys for sampling, noise, and entropy calculation
+        sample_key, noise_key, entropy_key = jax.random.split(key, 3)
+
+        # Sample action(s) from the policy
+        if self.num_particles == 1:
+            act, _ = sample(sample_key)
+        else:
+            keys = jax.random.split(sample_key, self.num_particles)
+            acts, qs = jax.vmap(sample)(keys)
+            q_best_ind = jnp.argmax(qs, axis=0, keepdims=True)
+            act = jnp.take_along_axis(acts, q_best_ind[..., None], axis=0).squeeze(axis=0)
+
+        # Compute log probability of the original action (before adding exploration noise)
+        log_prob = self.compute_log_likelihood(entropy_key, policy_params_only, obs, act)
+
+        # Entropy is the negative log probability
+        entropy = -log_prob
+
+        # Add exploration noise to the action that will be executed
+        # noisy_act = act + jax.random.normal(noise_key, act.shape) * jnp.exp(log_alpha) * self.noise_scale
+        noisy_act = act + jax.random.normal(noise_key, act.shape) * jnp.float32(0.1) * self.noise_scale
+
+        return noisy_act, entropy
+
+
 
 def create_mf2_sac_ent_net(
     key: jax.Array,
