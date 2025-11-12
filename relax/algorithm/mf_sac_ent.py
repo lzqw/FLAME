@@ -118,7 +118,7 @@ class MFSACENT(Algorithm):
 
             # Add the entropy bonus to the target, which is the core of SAC
             # q_target = jnp.minimum(q1_target, q2_target) + jnp.exp(log_alpha) * next_entropy
-            q_target = jnp.minimum(q1_target, q2_target) + jnp.float32(agent.alpha_value) * next_entropy
+            q_target = jnp.minimum(q1_target, q2_target) - jnp.float32(agent.alpha_value) * next_entropy
             q_backup = reward + (1 - done) * self.gamma * q_target
 
             def q_loss_fn(q_params: hk.Params) -> jax.Array:

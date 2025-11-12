@@ -64,7 +64,7 @@ class MFSACENTNet:
             q_best_ind = jnp.argmax(qs, axis=0, keepdims=True)
             act = jnp.take_along_axis(acts, q_best_ind[..., None], axis=0).squeeze(axis=0)
         # act = act + jax.random.normal(noise_key, act.shape) * jnp.exp(log_alpha) * self.noise_scale
-        act = act + jax.random.normal(noise_key, act.shape) * jnp.float32(0.1) * self.noise_scale
+        act = act #+ jax.random.normal(noise_key, act.shape) * jnp.float32(0.1) * self.noise_scale
         return act
 
     def get_action_ent(self, key: jax.Array, policy_params: hk.Params, obs: jax.Array) -> Tuple[jax.Array, jax.Array]:
@@ -103,7 +103,7 @@ class MFSACENTNet:
 
         # Add exploration noise to the action that will be executed
         # noisy_act = act + jax.random.normal(noise_key, act.shape) * jnp.exp(log_alpha) * self.noise_scale
-        noisy_act = act + jax.random.normal(noise_key, act.shape) * jnp.float32(0.1) * self.noise_scale
+        noisy_act = act #+ jax.random.normal(noise_key, act.shape) * jnp.float32(0.1) * self.noise_scale
 
         return noisy_act, entropy
 
@@ -191,7 +191,7 @@ class MFSACENTNet:
 
         # Set up the reverse Euler integration using jax.lax.scan for performance
         num_steps = self.num_timesteps
-        num_steps = 20
+        # num_steps = 20
         dt = -1.0 / num_steps
 
         def solver_step(state, t):
