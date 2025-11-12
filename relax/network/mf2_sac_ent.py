@@ -22,7 +22,7 @@ class Diffv2Params(NamedTuple):
 
 
 @dataclass
-class MF2Net:
+class MF2SACENTNet:
     q: Callable[[hk.Params, jax.Array, jax.Array], jax.Array]
     policy: Callable[[hk.Params, jax.Array, jax.Array, jax.Array], jax.Array]
     num_timesteps: int
@@ -32,6 +32,7 @@ class MF2Net:
     target_entropy: float
     noise_scale: float
     noise_schedule: str
+    alpha_value: float
 
     @property
     def flow(self) -> MeanFlow:
@@ -62,7 +63,7 @@ class MF2Net:
             acts, qs = jax.vmap(sample)(keys)
             q_best_ind = jnp.argmax(qs, axis=0, keepdims=True)
             act = jnp.take_along_axis(acts, q_best_ind[..., None], axis=0).squeeze(axis=0)
-        act = act + jax.random.normal(noise_key, act.shape) * jnp.exp(0.01) * self.noise_scale
+        act = act + jax.random.normal(noise_key, act.shape) * jnp.exp(0.1) * self.noise_scale
         return act
 
     def get_vanilla_action(self, key: jax.Array, policy_params: hk.Params, obs: jax.Array) -> jax.Array:
@@ -99,7 +100,7 @@ class MF2Net:
         return self.get_action(key, policy_params, obs)
 
 
-def create_mf2_net(
+def create_mf2_sac_ent_net(
     key: jax.Array,
     obs_dim: int,
     act_dim: int,
@@ -111,7 +112,8 @@ def create_mf2_net(
     num_particles: int = 32,
     noise_scale: float = 0.05,
     target_entropy_scale=0.9,
-) -> Tuple[MF2Net, Diffv2Params]:
+    alpha_value: float = 0.1,
+) -> Tuple[MF2SACENTNet, Diffv2Params]:
     q = hk.without_apply_rng(hk.transform(lambda obs, act: QNet(hidden_sizes, activation)(obs, act)))
     policy = hk.without_apply_rng(
         hk.transform(lambda obs, act, r, t: DACERPolicyNet2(diffusion_hidden_sizes, activation)(obs, act, r, t)))
@@ -133,8 +135,9 @@ def create_mf2_net(
     sample_act = jnp.zeros((1, act_dim))
     params = init(key, sample_obs, sample_act)
 
-    net = MF2Net(q=q.apply, policy=policy.apply, num_timesteps=num_timesteps, num_timesteps_test=num_timesteps_test,
+    net = MF2SACENTNet(q=q.apply, policy=policy.apply, num_timesteps=num_timesteps, num_timesteps_test=num_timesteps_test,
                  act_dim=act_dim,
                  target_entropy=-act_dim * target_entropy_scale, num_particles=num_particles, noise_scale=noise_scale,
-                 noise_schedule='linear')
+                 noise_schedule='linear', alpha_value = alpha_value
+    )
     return net, params
