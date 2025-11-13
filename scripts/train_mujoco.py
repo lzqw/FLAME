@@ -89,8 +89,9 @@ if __name__ == "__main__":
     parser.add_argument("--debug", default=False)
     parser.add_argument("--use_ema_policy", default=True, action="store_true")
     parser.add_argument("--sample_k", type=int, default=500)
-    parser.add_argument("--fix_alpha", type=bool, default=False)
+    parser.add_argument("--fix_alpha", type=bool, default=True)
     parser.add_argument("--alpha", type=float, default=0.01)
+    parser.add_argument("--init_alpha", type=float, default=0.01)
     args = parser.parse_args()
 
     if args.debug:
@@ -344,12 +345,17 @@ if __name__ == "__main__":
                                           num_particles=args.num_particles,
                                           noise_scale=args.noise_scale,
                                           target_entropy_scale=args.target_entropy_scale,
-                                               alpha_value=args.alpha)
+                                               alpha_value=args.alpha,
+                                                fixed_alpha=args.fix_alpha,
+                                                init_alpha=args.init_alpha)
         algorithm = MF2SACENT2(agent, params, lr=args.lr, alpha_lr=args.alpha_lr,
                            delay_alpha_update=args.delay_alpha_update,
                              lr_schedule_end=args.lr_schedule_end,
                              use_ema=args.use_ema_policy,
-                          sample_k=args.sample_k)
+                          sample_k=args.sample_k,
+                               alpha_value=args.alpha,
+                               fixed_alpha=args.fix_alpha
+                               )
 
     elif args.alg == 'mf_sac':
         def mish(x: jax.Array):

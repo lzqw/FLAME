@@ -49,7 +49,9 @@ class MF2SACENT2(Algorithm):
         reward_scale: float = 0.2,
         num_samples: int = 200,
         use_ema: bool = True,
-        sample_k: int = 500
+        sample_k: int = 500,
+        alpha_value: float = 0.01,
+        fixed_alpha: bool = True,
     ):
         self.agent = agent
         self.gamma = gamma
@@ -68,6 +70,8 @@ class MF2SACENT2(Algorithm):
         self.policy_optim = optax.adam(learning_rate=lr_schedule)
         self.alpha_optim = optax.adam(alpha_lr)
         self.entropy = 0.0
+        self.fixed_alpha = fixed_alpha
+        self.alpha_value = alpha_value
 
         self.state = Diffv2TrainState(
             params=params,
@@ -117,7 +121,10 @@ class MF2SACENT2(Algorithm):
             q1_target = self.agent.q(target_q1_params, next_obs, next_action)
             q2_target = self.agent.q(target_q2_params, next_obs, next_action)
             #TODO: positive or negative
-            q_target = jnp.minimum(q1_target, q2_target)  - jnp.float32(0.01) * next_entropy
+            if self.fixed_alpha:
+                q_target = jnp.minimum(q1_target, q2_target)  - jnp.float32(self.alpha_value) * next_entropy
+            else:
+                q_target = jnp.minimum(q1_target, q2_target) - jnp.exp(log_alpha) * next_entropy
             q_backup = reward + (1 - done) * self.gamma * q_target
 
             def q_loss_fn(q_params: hk.Params) -> jax.Array:
@@ -170,7 +177,7 @@ class MF2SACENT2(Algorithm):
             devices = jax.devices()
             compute_Q_DDP = partial(shard_map, mesh=Mesh(devices, ('i',)), in_specs=(P('i'), P('i')), out_specs=(P('i')))(get_min_q)
             critic = compute_Q_DDP( observations_repeat, clean_samples)  # batch_size, K
-            weight = nn.softmax((1 / jnp.float32(0.01)) * critic, axis=1)
+            weight = nn.softmax((1 / jnp.float32(self.alpha_value)) * critic, axis=1)
 
 
             u_estimation = jnp.sum(weight[:,:,None] * (clean_samples-noise), axis=1)
@@ -207,10 +214,8 @@ class MF2SACENT2(Algorithm):
 
             # update alpha
             def log_alpha_loss_fn(log_alpha: jax.Array) -> jax.Array:
-                approx_entropy = 0.5 * self.agent.act_dim * jnp.log(
-                    2 * jnp.pi * jnp.exp(1) * (0.1 * jnp.exp(log_alpha)) ** 2)
-                log_alpha_loss = -1 * log_alpha * (
-                        -1 * jax.lax.stop_gradient(approx_entropy) + self.agent.target_entropy)
+                approx_entropy = jnp.mean(next_entropy)
+                log_alpha_loss = -jnp.mean(log_alpha * (approx_entropy + self.agent.target_entropy))
                 return log_alpha_loss
 
             # update networks
@@ -263,7 +268,7 @@ class MF2SACENT2(Algorithm):
                 opt_state=Diffv2OptStates(q1=q1_opt_state, q2=q2_opt_state, policy=policy_opt_state,
                                           log_alpha=log_alpha_opt_state),
                 step=step + 1,
-                entropy=jnp.float32(0.0),
+                entropy=jnp.float32(jnp.mean(next_entropy)),
                 running_mean=new_running_mean,
                 running_std=new_running_std
             )

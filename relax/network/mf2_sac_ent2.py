@@ -33,6 +33,7 @@ class MF2SACENT2Net:
     noise_scale: float
     noise_schedule: str
     alpha_value: float
+    fixed_alpha: bool
 
     @property
     def flow(self) -> MeanFlow:
@@ -63,7 +64,10 @@ class MF2SACENT2Net:
             acts, qs = jax.vmap(sample)(keys)
             q_best_ind = jnp.argmax(qs, axis=0, keepdims=True)
             act = jnp.take_along_axis(acts, q_best_ind[..., None], axis=0).squeeze(axis=0)
-        act = act + jax.random.normal(noise_key, act.shape) * jnp.exp(0.1) * self.noise_scale
+        if self.fixed_alpha:
+            act = act + jax.random.normal(noise_key, act.shape) * jnp.exp(0.1) * self.noise_scale
+        else:
+            act = act + jax.random.normal(noise_key, act.shape) * jnp.exp(log_alpha) * self.noise_scale
         return act
 
     def get_vanilla_action(self, key: jax.Array, policy_params: hk.Params, obs: jax.Array) -> jax.Array:
@@ -224,8 +228,10 @@ class MF2SACENT2Net:
 
         # Add exploration noise to the action that will be executed
         # noisy_act = act + jax.random.normal(noise_key, act.shape) * jnp.exp(log_alpha) * self.noise_scale
-        noisy_act = act + jax.random.normal(noise_key, act.shape) * jnp.float32(0.1) * self.noise_scale
-
+        if self.fixed_alpha:
+            noisy_act = act + jax.random.normal(noise_key, act.shape) * jnp.float32(0.1) * self.noise_scale
+        else:
+            noisy_act = act + jax.random.normal(noise_key, act.shape) * jnp.exp(log_alpha) * self.noise_scale
         return noisy_act, entropy
 
 
@@ -242,7 +248,9 @@ def create_mf2_sac_ent2_net(
     num_particles: int = 32,
     noise_scale: float = 0.05,
     target_entropy_scale=0.9,
-    alpha_value: float = 0.1,
+    alpha_value: float = 0.01,
+    fixed_alpha: bool = True,
+    init_alpha: float = 0.01,
 ) -> Tuple[MF2SACENT2Net, Diffv2Params]:
     q = hk.without_apply_rng(hk.transform(lambda obs, act: QNet(hidden_sizes, activation)(obs, act)))
     policy = hk.without_apply_rng(
@@ -257,7 +265,7 @@ def create_mf2_sac_ent2_net(
         target_q2_params = q2_params
         policy_params = policy.init(policy_key, obs, act, 0, 0)
         target_policy_params = policy_params
-        log_alpha = jnp.array(math.log(5), dtype=jnp.float32)  # math.log(3) or math.log(5) choose one
+        log_alpha = jnp.array(math.log(init_alpha), dtype=jnp.float32)  # math.log(3) or math.log(5) choose one
         return Diffv2Params(q1_params, q2_params, target_q1_params, target_q2_params, policy_params,
                             target_policy_params, log_alpha)
 
@@ -268,6 +276,6 @@ def create_mf2_sac_ent2_net(
     net = MF2SACENT2Net(q=q.apply, policy=policy.apply, num_timesteps=num_timesteps, num_timesteps_test=num_timesteps_test,
                  act_dim=act_dim,
                  target_entropy=-act_dim * target_entropy_scale, num_particles=num_particles, noise_scale=noise_scale,
-                 noise_schedule='linear', alpha_value = alpha_value
+                 noise_schedule='linear', alpha_value = alpha_value,fixed_alpha=fixed_alpha
     )
     return net, params
