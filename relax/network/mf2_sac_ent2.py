@@ -174,7 +174,7 @@ class MF2SACENT2Net:
             # t is the current time (scalar) from timesteps
             df_dt, dg_dt = ode_dynamics(state, t)
 
-            f_next = f_t - df_dt * dt_solver
+            f_next = f_t - df_dt * dt_solver  # negative or posiiitive
             g_next = g_t + dg_dt * dt_solver
             return (f_next, g_next), None
 
