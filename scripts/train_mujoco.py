@@ -90,7 +90,7 @@ if __name__ == "__main__":
     parser.add_argument("--debug", default=False)
     parser.add_argument("--use_ema_policy", default=True, action="store_true")
     parser.add_argument("--sample_k", type=int, default=500)
-    parser.add_argument("--fix_alpha", type=bool, default=True)
+    parser.add_argument("--fix_alpha", type=bool, default=False)
     parser.add_argument("--alpha", type=float, default=0.01)
     parser.add_argument("--init_alpha", type=float, default=0.01)
     args = parser.parse_args()
