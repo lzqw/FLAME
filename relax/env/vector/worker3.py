@@ -5,6 +5,7 @@ import argparse
 import json
 
 import gymnasium
+import relax.env
 import numpy as np
 
 import setproctitle

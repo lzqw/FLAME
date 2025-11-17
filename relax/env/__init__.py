@@ -1,8 +1,13 @@
 import numpy as np
-from gymnasium import Env, Wrapper, make
+from gymnasium import Env, Wrapper, make, register
 from gymnasium.spaces import Box
 
 from relax.env.vector import VectorEnv, SerialVectorEnv, GymProcessVectorEnv, PipeProcessVectorEnv, SpinlockProcessVectorEnv, FutexProcessVectorEnv
+register(
+    id='FlatThreeLaneStraight',  # <-- 这是你将在训练脚本中使用的新 ID
+    entry_point='relax.env.drive.lane_change:make_flat_metadrive_env',  # 指向你的创建函数
+    max_episode_steps=1000  # 你可以根据需要调整这个值
+)
 
 class RelaxWrapper(Wrapper):
     def __init__(self, env: Env, action_seed: int = 0):
