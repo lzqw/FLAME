@@ -25,8 +25,10 @@ from relax.algorithm.mf2 import MF2
 from relax.algorithm.rf_sac import RFSAC
 from relax.algorithm.rf_sac_b import RFSACB
 from relax.algorithm.rf_sac_estient import RFSACESTIENT
-from relax.algorithm.mf_sac import MFSAC
 from relax.algorithm.rf_sac_ent import RFSACENT
+from relax.algorithm.rf2_sac_ent import RF2SACENT
+
+from relax.algorithm.mf_sac import MFSAC
 from relax.algorithm.mf_sac2_ent import MFSAC2ENT
 from relax.algorithm.mf_sac_ent import MFSACENT
 from relax.algorithm.mf2_sac_ent import MF2SACENT
@@ -55,6 +57,7 @@ from relax.network.rf_sac import create_rf_sac_net
 from relax.network.rf_sac_b import create_rf_sac_b_net
 from relax.network.rf_sac_estient import create_rf_sac_estient_net
 from relax.network.rf_sac_ent import create_rf_sac_ent_net
+from relax.network.rf2_sac_ent import create_rf2_sac_ent_net
 
 from relax.trainer.off_policy import OffPolicyTrainer
 from relax.env import create_env, create_vector_env
@@ -66,8 +69,8 @@ from relax.utils.log_diff import log_git_details
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     #python scripts/train_mujoco.py --env HalfCheetah-v5 --diffusion_steps 20 --alg rf_sac_estient  --noise_scale 0.1 the best for halfcheetah
-    parser.add_argument("--alg", type=str, default="sdac")
-    parser.add_argument("--env", type=str, default="FlatThreeLaneStraight")
+    parser.add_argument("--alg", type=str, default="rf2_sac_ent")
+    parser.add_argument("--env", type=str, default="Hopper-v5")
     ##Hopper-v5,Ant-V4,HalfCheetah-v5,Walker2d-v5,Swimmer-v5,InvertedPendulum-v4,
     parser.add_argument("--suffix", type=str, default="test_use_atp1")
     parser.add_argument("--num_vec_envs", type=int, default=2)
@@ -288,6 +291,27 @@ if __name__ == "__main__":
                              use_ema=args.use_ema_policy,
                           sample_k=args.sample_k,
                              fixed_alpha=args.fix_alpha)
+
+    elif args.alg == 'rf2_sac_ent':
+        def mish(x: jax.Array):
+            return x * jnp.tanh(jax.nn.softplus(x))
+        agent, params = create_rf2_sac_ent_net(init_network_key, obs_dim, act_dim, hidden_sizes, diffusion_hidden_sizes, mish,
+                                          num_timesteps=args.diffusion_steps,
+                                              num_timesteps_test=args.diffusion_steps_test,
+                                          num_particles=args.num_particles,
+                                          noise_scale=args.noise_scale,
+                                          target_entropy_scale=args.target_entropy_scale,
+                                               alpha_value=args.alpha,
+                                               fixed_alpha=args.fix_alpha,
+                                               init_alpha=args.init_alpha)
+
+        algorithm = RF2SACENT(agent, params, lr=args.lr, alpha_lr=args.alpha_lr,
+                           delay_alpha_update=args.delay_alpha_update,
+                             lr_schedule_end=args.lr_schedule_end,
+                             use_ema=args.use_ema_policy,
+                          sample_k=args.sample_k,
+                              alpha_value=args.alpha,
+                              fixed_alpha=args.fix_alpha)
 
     elif args.alg == 'mf_sac_ent':
         def mish(x: jax.Array):
