@@ -66,10 +66,21 @@ from relax.utils.fs import PROJECT_ROOT
 from relax.utils.random_utils import seeding
 from relax.utils.log_diff import log_git_details
 
+
+def str2bool(v):
+    if isinstance(v, bool):
+        return v
+    if v.lower() in ('yes', 'true', 't', 'y', '1'):
+        return True
+    elif v.lower() in ('no', 'false', 'f', 'n', '0'):
+        return False
+    else:
+        raise argparse.ArgumentTypeError('Boolean value expected.')
+
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     #python scripts/train_mujoco.py --env HalfCheetah-v5 --diffusion_steps 20 --alg rf_sac_estient  --noise_scale 0.1 the best for halfcheetah
-    parser.add_argument("--alg", type=str, default="rf2_sac_ent")
+    parser.add_argument("--alg", type=str, default="mf2_sac_ent2")
     parser.add_argument("--env", type=str, default="Hopper-v5")
     ##Hopper-v5,Ant-V4,HalfCheetah-v5,Walker2d-v5,Swimmer-v5,InvertedPendulum-v4,
     parser.add_argument("--suffix", type=str, default="test_use_atp1")
@@ -93,7 +104,7 @@ if __name__ == "__main__":
     parser.add_argument("--debug", default=False)
     parser.add_argument("--use_ema_policy", default=True, action="store_true")
     parser.add_argument("--sample_k", type=int, default=500)
-    parser.add_argument("--fix_alpha", type=bool, default=False)
+    parser.add_argument("--fix_alpha", type=str2bool, default=True)
     parser.add_argument("--alpha", type=float, default=0.01)
     parser.add_argument("--init_alpha", type=float, default=0.01)
     args = parser.parse_args()
