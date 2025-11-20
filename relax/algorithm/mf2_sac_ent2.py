@@ -177,8 +177,11 @@ class MF2SACENT2(Algorithm):
             devices = jax.devices()
             compute_Q_DDP = partial(shard_map, mesh=Mesh(devices, ('i',)), in_specs=(P('i'), P('i')), out_specs=(P('i')))(get_min_q)
             critic = compute_Q_DDP( observations_repeat, clean_samples)  # batch_size, K
-            weight = nn.softmax((1 / jnp.float32(self.alpha_value)) * critic, axis=1)
 
+            if self.fixed_alpha:
+                weight = nn.softmax((1 / jnp.float32(self.alpha_value)) * critic, axis=1)
+            else:
+                weight = nn.softmax((1 / jnp.exp(log_alpha)) * critic, axis=1)
 
             u_estimation = jnp.sum(weight[:,:,None] * (clean_samples-noise), axis=1)
             obs_expanded = jnp.repeat(obs, self.K, axis=0)
