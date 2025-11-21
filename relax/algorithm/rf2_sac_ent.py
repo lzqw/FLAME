@@ -208,7 +208,8 @@ class RF2SACENT(Algorithm):
             # update alpha
             def log_alpha_loss_fn(log_alpha: jax.Array) -> jax.Array:
                 approx_entropy = jnp.mean(entropy)
-                log_alpha_loss = -jnp.mean(log_alpha * (approx_entropy + self.agent.target_entropy))
+                #log_alpha_loss = jnp.mean(log_alpha * (approx_entropy-self.agent.target_entropy))
+                log_alpha_loss = jnp.mean(log_alpha * (approx_entropy-self.agent.target_entropy))
                 return log_alpha_loss
 
             # update networks
