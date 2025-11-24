@@ -177,7 +177,8 @@ class RF2SACENT(Algorithm):
             if self.fixed_alpha:
                 critic=critic/jnp.float32(agent.alpha_value)
             else:
-                critic=critic/jnp.exp(log_alpha)
+                safe_alpha = jnp.maximum(jnp.exp(log_alpha), 0.001)
+                critic=critic/safe_alpha
             q_mean, q_std = critic.mean(), critic.std()
             Z = jax.nn.logsumexp(critic, axis=1, keepdims=True)  # [batch_size, 1]
             q_weights = jnp.exp(critic - Z) # [batch_size, mc_num]
