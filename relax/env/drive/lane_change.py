@@ -1,6 +1,8 @@
 import logging, importlib, inspect
 import sys
 from typing import Tuple
+
+from gymnasium.spaces.utils import FlatType
 from metadrive.envs.safe_metadrive_env import SafeMetaDriveEnv
 from metadrive.component.map.base_map import BaseMap
 from metadrive.component.map.pg_map import MapGenerateMethod, FirstPGBlock
