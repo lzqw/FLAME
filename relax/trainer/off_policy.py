@@ -81,10 +81,14 @@ class OffPolicyTrainer:
         self.progress = tqdm(total=self.total_step, desc="Sample Step", disable=None, dynamic_ncols=True)
 
         self.algorithm.save_policy_structure(self.log_path, dummy_data.obs[0])
+        if "AntMaze" in self.env.spec.id:
+            eval_path="relax.trainer.evaluator_antmaze"
+        else:
+            eval_path="relax.trainer.evaluator"
         self.evaluator = subprocess.Popen(
             [
                 sys.executable,
-                "-m", "relax.trainer.evaluator",
+                "-m", eval_path,
                 str(self.log_path),
                 "--env", self.env.spec.id,
                 "--num_episodes", str(self.evaluate_n_episode),

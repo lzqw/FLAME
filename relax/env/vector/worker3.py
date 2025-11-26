@@ -1,6 +1,6 @@
 import os
 os.environ["OMP_NUM_THREADS"] = "1"
-
+import relax.env.antmaze
 import argparse
 import json
 
@@ -11,6 +11,7 @@ import numpy as np
 import setproctitle
 from relax.prctl import set_client_pdeathsig
 from relax.futex import futex_client_wait, futex_client_notify
+
 
 import warnings
 warnings.filterwarnings("ignore", category=DeprecationWarning, module=r"^gymnasium\.")

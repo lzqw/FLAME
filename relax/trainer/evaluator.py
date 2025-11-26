@@ -7,7 +7,7 @@ from pathlib import Path
 import argparse
 import pickle
 import csv
-
+import relax.env.antmaze
 import numpy as np
 import jax
 from tensorboardX import SummaryWriter
