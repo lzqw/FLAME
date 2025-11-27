@@ -1,6 +1,7 @@
 import os
 os.environ["OMP_NUM_THREADS"] = "1"
 import relax.env.antmaze
+import relax.env.fetcharm
 import argparse
 import json
 

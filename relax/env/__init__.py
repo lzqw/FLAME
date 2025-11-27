@@ -58,7 +58,11 @@ def create_env(name: str, seed: int, action_seed: int = 0):
     if name.startswith('dm_control'):
         from relax.env.dmc.register import register_dm_control_envs
         register_dm_control_envs()
-    env = make(name)
+    if 'AntMaze' in name:
+        env = make(name, render_mode='human')
+        # env = make(name)
+    else:
+        env = make(name)
     env.reset(seed=seed)
     env = RelaxWrapper(env, action_seed)
     return env, env.obs_dim, env.act_dim

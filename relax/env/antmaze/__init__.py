@@ -14,7 +14,7 @@ register(
     max_episode_steps=1000,
     kwargs={
         'maze_map': MAP_CENTER_BLOCK,
-        'reward_type': 'sparse',
+        'reward_type': 'dense',
         'continuing_task': True,
         'reset_target': True
     }
@@ -26,7 +26,7 @@ register(
     max_episode_steps=1000,
     kwargs={
         'maze_map': MAP_H_SHAPE,
-        'reward_type': 'sparse',
+        'reward_type': 'dense',
         'continuing_task': True,
         'reset_target': True
     }
@@ -38,7 +38,7 @@ register(
     max_episode_steps=1000,
     kwargs={
         'maze_map': MAP_COMPLEX,
-        'reward_type': 'sparse',
+        'reward_type': 'dense',
         'continuing_task': True,
         'reset_target': True
     }
@@ -49,9 +49,10 @@ if __name__ == "__main__":
     env=gym.make('AntMaze_CenterBlock-v0', render_mode='human')
     for _ in range(1000):
         obs, _ = env.reset()
-        for i in range(10):
+        for i in range(1000):
             action = env.action_space.sample()
             obs, reward, terminated, truncated, info = env.step(action)
+            print(reward)
             env.render()
             if terminated or truncated:
                 obs, _ = env.reset()

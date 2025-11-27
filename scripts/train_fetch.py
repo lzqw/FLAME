@@ -5,7 +5,8 @@ import time
 from functools import partial
 import yaml
 import relax.env.drive.lane_change
-
+import relax.env.antmaze
+import relax.env.fetcharm
 import jax, jax.numpy as jnp
 from numpy.random import sample
 
@@ -66,8 +67,6 @@ from relax.utils.fs import PROJECT_ROOT
 from relax.utils.random_utils import seeding
 from relax.utils.log_diff import log_git_details
 
-import relax.env.antmaze
-
 def str2bool(v):
     if isinstance(v, bool):
         return v
@@ -82,7 +81,7 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     #python scripts/train_mujoco.py --env HalfCheetah-v5 --diffusion_steps 20 --alg rf_sac_estient  --noise_scale 0.1 the best for halfcheetah
     parser.add_argument("--alg", type=str, default="sac")
-    parser.add_argument("--env", type=str, default="AntMaze_CenterBlock-v0")
+    parser.add_argument("--env", type=str, default="Fetch_Push-v0")
     ##Hopper-v5,Ant-V4,HalfCheetah-v5,Walker2d-v5,Swimmer-v5,InvertedPendulum-v4,
     parser.add_argument("--suffix", type=str, default="test_use_atp1")
     parser.add_argument("--num_vec_envs", type=int, default=3)
