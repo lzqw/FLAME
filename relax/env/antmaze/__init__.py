@@ -43,3 +43,15 @@ register(
         'reset_target': True
     }
 )
+
+if __name__ == "__main__":
+    import gymnasium as gym
+    env=gym.make('AntMaze_CenterBlock-v0', render_mode='human')
+    for _ in range(1000):
+        obs, _ = env.reset()
+        for i in range(10):
+            action = env.action_space.sample()
+            obs, reward, terminated, truncated, info = env.step(action)
+            env.render()
+            if terminated or truncated:
+                obs, _ = env.reset()
