@@ -66,7 +66,7 @@ if __name__ == "__main__":
     parser.add_argument("--n_step", type=int, default=1)
     parser.add_argument("--reward_scale", type=float, default=1.0)
     parser.add_argument("--sample_per_iteration", type=int, default=1)
-    parser.add_argument("--sample_k", type=int, default=10)
+    parser.add_argument("--sample_k", type=int, default=2)
     parser.add_argument("--update_per_iteration", type=int, default=1)
     parser.add_argument("--temperature", type=float, default=1.0)
     args = parser.parse_args()
