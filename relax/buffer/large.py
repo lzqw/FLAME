@@ -12,6 +12,7 @@ from torch.utils.data import IterableDataset, default_collate
 import torch.multiprocessing as mp
 from jax.tree_util import tree_map
 
+
 def episode_len(episode):
     # subtract -1 because the dummy first transition
     return next(iter(episode.values())).shape[0] - 1
@@ -30,7 +31,7 @@ def load_episode(fn):
         episode = np.load(f)
         episode = {k: episode[k] for k in episode.keys()}
         return episode
-    
+
 
 class RandomShiftsAug(nn.Module):
     def __init__(self, pad):
@@ -65,11 +66,12 @@ class RandomShiftsAug(nn.Module):
 
         grid = base_grid + shift
         x = F.grid_sample(x,
-                        grid,
-                        padding_mode='zeros',
-                        align_corners=False)
+                          grid,
+                          padding_mode='zeros',
+                          align_corners=False)
         x = x.reshape(x.shape[0], -1).squeeze()
-        return  x.detach().cpu().numpy()
+        return x.detach().cpu().numpy()
+
 
 class ReplayBufferStorage:
     def __init__(self, data_specs, replay_dir, num_envs):
@@ -85,7 +87,7 @@ class ReplayBufferStorage:
 
     def __len__(self):
         return self._num_transitions
-    
+
     def add(self, time_step):
         time_step = time_step[0]
         for spec in self._data_specs:
@@ -219,7 +221,7 @@ class ReplayBuffer(IterableDataset):
             reward += discount * step_reward
             # discount *= episode['discount'][idx + i] * self._discount
             discount *= self._discount
-        #data aug
+        # data aug
         if self._augment:
             obs = self._aug(obs)
             next_obs = self._aug(next_obs)
@@ -229,13 +231,16 @@ class ReplayBuffer(IterableDataset):
         while True:
             yield self._sample()
 
+
 def _worker_init_fn(worker_id):
     seed = np.random.get_state()[1][0] + worker_id
     np.random.seed(seed)
     random.seed(seed)
 
+
 def numpy_collate(batch):
-  return tree_map(np.asarray, default_collate(batch))
+    return tree_map(np.asarray, default_collate(batch))
+
 
 def make_replay_loader(replay_dir, max_size, batch_size, num_workers,
                        save_snapshot, nstep, discount):
@@ -265,7 +270,7 @@ def make_replay_loader(replay_dir, max_size, batch_size, num_workers,
 #                             discount,
 #                             fetch_every=1000,
 #                             save_snapshot=save_snapshot)
-    
+
 #     def generator():
 #         while True:
 #             batch = [buffer._sample() for _ in range(batch_size)]

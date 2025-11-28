@@ -119,13 +119,13 @@ class OffPolicyTrainer:
             next_obs, reward, terminated, truncated, info = self.env.step(action)
 
             # experience = Experience.create(obs, action, reward, terminated, truncated, next_obs, info)
-            
+
             is_last = np.any(terminated) or np.any(truncated)
             time_steps = []
             for idx in range(obs.shape[0]):
-                time_step = {'observation' : next_obs[idx].astype(np.uint8, copy=False), 
-                             'action' : action[idx],
-                             'reward' : reward[idx], 
+                time_step = {'observation': next_obs[idx].astype(np.uint8, copy=False),
+                             'action': action[idx],
+                             'reward': reward[idx],
                              'is_last': is_last}
                 time_steps.append(time_step)
             if self.is_vec:
@@ -148,10 +148,10 @@ class OffPolicyTrainer:
 
         time_steps = []
         for idx in range(obs.shape[0]):
-            time_step = {'observation' : next_obs[idx].astype(np.uint8, copy=False), 
-                        'action' : action[idx],
-                        'reward' : reward[idx],
-                        'is_last': any_done}
+            time_step = {'observation': next_obs[idx].astype(np.uint8, copy=False),
+                         'action': action[idx],
+                         'reward': reward[idx],
+                         'is_last': any_done}
             time_steps.append(time_step)
         if self.is_vec:
             self.storage.add_batch(time_steps)
@@ -172,7 +172,7 @@ class OffPolicyTrainer:
     def update(self, update_key: jax.Array):
         ul = self.update_log
         data = next(self.replay_iter)
-        
+
         info = self.algorithm.update(update_key, data)
 
         ul.add(info)
@@ -235,7 +235,9 @@ class OffPolicyTrainer:
         self.evaluator.stdin.close()
         self.evaluator.wait()
 
-def create_iter_key_fn(key: jax.Array, sample_per_iteration: int, update_per_iteration: int) -> Callable[[int], Tuple[jax.Array, jax.Array]]:
+
+def create_iter_key_fn(key: jax.Array, sample_per_iteration: int, update_per_iteration: int) -> Callable[
+    [int], Tuple[jax.Array, jax.Array]]:
     def iter_key_fn(step: int):
         iter_key = jax.random.fold_in(key, step)
         sample_key, update_key = jax.random.split(iter_key)

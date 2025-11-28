@@ -31,10 +31,10 @@ from relax.utils.log_diff import log_git_details
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
-    parser.add_argument("--alg", type=str, default="rf_v")
-    parser.add_argument("--env", type=str, default="Ant-v4")
+    parser.add_argument("--alg", type=str, default="sac_v")
+    parser.add_argument("--env", type=str, default="dm_control_walker_walk-v0")
     parser.add_argument("--suffix", type=str, default="test_use_atp1")
-    parser.add_argument("--num_vec_envs", type=int, default=5)
+    parser.add_argument("--num_vec_envs", type=int, default=3)
     parser.add_argument("--hidden_num", type=int, default=3)
     parser.add_argument("--hidden_dim", type=int, default=256)
     parser.add_argument("--diffusion_steps", type=int, default=20)
@@ -104,12 +104,12 @@ if __name__ == "__main__":
         def mish(x: jax.Array):
             return x * jnp.tanh(jax.nn.softplus(x))
         agent, params = create_rf_net_visual(init_network_key, obs_dim, latent_obs_dim, act_dim, hidden_sizes, diffusion_hidden_sizes, mish,
-                                          num_timesteps=args.diffusion_steps, 
+                                          num_timesteps=args.diffusion_steps,
                                           num_timesteps_test=args.diffusion_steps_test,
-                                          num_particles=args.num_particles, 
+                                          num_particles=args.num_particles,
                                           noise_scale=args.noise_scale,
                                           target_entropy_scale=args.target_entropy_scale)
-        algorithm = RF_V(agent, params, gamma=args.gamma, lr=args.lr, alpha_lr=args.alpha_lr, 
+        algorithm = RF_V(agent, params, gamma=args.gamma, lr=args.lr, alpha_lr=args.alpha_lr,
                             delay_alpha_update=args.delay_alpha_update,
                             lr_schedule_end=args.lr_schedule_end,
                             use_ema=args.use_ema_policy,
@@ -120,12 +120,12 @@ if __name__ == "__main__":
         def mish(x: jax.Array):
             return x * jnp.tanh(jax.nn.softplus(x))
         agent, params = create_mf_net_visual(init_network_key, obs_dim, latent_obs_dim, act_dim, hidden_sizes, diffusion_hidden_sizes, mish,
-                                          num_timesteps=args.diffusion_steps, 
+                                          num_timesteps=args.diffusion_steps,
                                           num_timesteps_test=args.diffusion_steps_test,
-                                          num_particles=args.num_particles, 
+                                          num_particles=args.num_particles,
                                           noise_scale=args.noise_scale,
                                           target_entropy_scale=args.target_entropy_scale)
-        algorithm = MF_V(agent, params, gamma=args.gamma, lr=args.lr, alpha_lr=args.alpha_lr, 
+        algorithm = MF_V(agent, params, gamma=args.gamma, lr=args.lr, alpha_lr=args.alpha_lr,
                            delay_alpha_update=args.delay_alpha_update,
                              lr_schedule_end=args.lr_schedule_end,
                              use_ema=args.use_ema_policy,
@@ -135,12 +135,12 @@ if __name__ == "__main__":
         def mish(x: jax.Array):
             return x * jnp.tanh(jax.nn.softplus(x))
         agent, params = create_mf2_net_visual(init_network_key, obs_dim, latent_obs_dim, act_dim, hidden_sizes, diffusion_hidden_sizes, mish,
-                                          num_timesteps=args.diffusion_steps, 
+                                          num_timesteps=args.diffusion_steps,
                                           num_timesteps_test=args.diffusion_steps_test,
-                                          num_particles=args.num_particles, 
+                                          num_particles=args.num_particles,
                                           noise_scale=args.noise_scale,
                                           target_entropy_scale=args.target_entropy_scale)
-        algorithm = MF2_V(agent, params, gamma=args.gamma, lr=args.lr, alpha_lr=args.alpha_lr, 
+        algorithm = MF2_V(agent, params, gamma=args.gamma, lr=args.lr, alpha_lr=args.alpha_lr,
                            delay_alpha_update=args.delay_alpha_update,
                              lr_schedule_end=args.lr_schedule_end,
                              use_ema=args.use_ema_policy,
@@ -153,11 +153,11 @@ if __name__ == "__main__":
         def mish(x: jax.Array):
             return x * jnp.tanh(jax.nn.softplus(x))
         agent, params = create_dpmd_net_visual(init_network_key, obs_dim, latent_obs_dim, act_dim, hidden_sizes, diffusion_hidden_sizes, mish,
-                                          num_timesteps=args.diffusion_steps, 
-                                          num_particles=args.num_particles, 
+                                          num_timesteps=args.diffusion_steps,
+                                          num_particles=args.num_particles,
                                           noise_scale=args.noise_scale,
                                           target_entropy_scale=args.target_entropy_scale)
-        algorithm = DPMD_V(agent, params, gamma=args.gamma, lr=args.lr, alpha_lr=args.alpha_lr, 
+        algorithm = DPMD_V(agent, params, gamma=args.gamma, lr=args.lr, alpha_lr=args.alpha_lr,
                            delay_alpha_update=args.delay_alpha_update,
                              lr_schedule_end=args.lr_schedule_end,
                              use_ema=args.use_ema_policy,
@@ -188,7 +188,7 @@ if __name__ == "__main__":
                     np.ones((args.batch_size,), dtype=np.float32),)
     trainer.setup(example_data)
     log_git_details(log_file=os.path.join(exp_dir, 'git.diff'))
-    
+
     # Save the arguments to a YAML file
     args_dict = vars(args)
     with open(os.path.join(exp_dir, 'config.yaml'), 'w') as yaml_file:

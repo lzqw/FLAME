@@ -49,10 +49,10 @@ class Logger(object):
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
-    parser.add_argument("policy_root", type="")
-    parser.add_argument("--env", type=str,default="Swimmer-V5")
-    parser.add_argument("--num_episodes", type=int,)
-    parser.add_argument("--seed", type=int, )
+    parser.add_argument("policy_root", type=Path)
+    parser.add_argument("--env", type=str, required=True)
+    parser.add_argument("--num_episodes", type=int, required=True)
+    parser.add_argument("--seed", type=int, required=True)
     args = parser.parse_args()
 
     master_rng = np.random.default_rng(args.seed)
