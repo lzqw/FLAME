@@ -23,7 +23,7 @@ class Diffv2Params(NamedTuple):
 
 
 @dataclass
-class RFNet_V:
+class RF2SACENTNet_V:
     q: Callable[[hk.Params, jax.Array, jax.Array], jax.Array]
     policy: Callable[[hk.Params, jax.Array, jax.Array, jax.Array], jax.Array]
     encoder: Callable[[hk.Params, jax.Array], jax.Array]
@@ -34,6 +34,8 @@ class RFNet_V:
     target_entropy: float
     noise_scale: float
     noise_schedule: str
+    alpha_value: float
+    fixed_alpha: bool
 
     @property
     def flow(self) -> OTFlow:
@@ -52,7 +54,10 @@ class RFNet_V:
         def sample(key: jax.Array) -> Union[jax.Array, jax.Array]:
             sample_key, gnoise_key = jax.random.split(key, 2)
             act = self.flow.p_sample(sample_key, model_fn, (*obs.shape[:-1], self.act_dim))
-            act = act + jax.random.normal(gnoise_key, act.shape) * jnp.exp(log_alpha) * self.noise_scale
+            if self.fixed_alpha:
+                act = act + jax.random.normal(noise_key, act.shape) * jnp.exp(0.1) * self.noise_scale
+            else:
+                act = act + jax.random.normal(noise_key, act.shape) * jnp.exp(log_alpha) * self.noise_scale
             q1 = self.q(q1_params, obs, act)
             q2 = self.q(q2_params, obs, act)
             q = jnp.minimum(q1, q2)
@@ -92,7 +97,10 @@ class RFNet_V:
             acts, qs = jax.vmap(sample)(keys)
             q_best_ind = jnp.argmax(qs, axis=0, keepdims=True)
             act = jnp.take_along_axis(acts, q_best_ind[..., None], axis=0).squeeze(axis=0)
-        act = act + jax.random.normal(noise_key, act.shape) * jnp.exp(log_alpha) * self.noise_scale
+        if self.fixed_alpha:
+            act = act + jax.random.normal(noise_key, act.shape) * jnp.exp(0.1) * self.noise_scale
+        else:
+            act = act + jax.random.normal(noise_key, act.shape) * jnp.exp(log_alpha) * self.noise_scale
         return act
 
     def get_vanilla_action(self, key: jax.Array, policy_params: hk.Params, obs: jax.Array) -> jax.Array:
@@ -146,7 +154,7 @@ class RFNet_V:
         return self.get_action_full(key, policy_params, obs)
 
 
-def create_rf_net_visual(
+def create_rf2_sac_ent_net_visual(
     key: jax.Array,
     obs_dim: int,
     latent_obs_dim: int,
@@ -159,7 +167,10 @@ def create_rf_net_visual(
     num_particles: int = 32,
     noise_scale: float = 0.05,
     target_entropy_scale=0.9,
-) -> Tuple[RFNet_V, Diffv2Params]:
+    alpha_value: float = 0.01,
+    fixed_alpha: bool = True,
+    init_alpha: float = 0.01,
+) -> Tuple[RF2SACENTNet_V, Diffv2Params]:
     # q = hk.without_apply_rng(hk.transform(lambda obs, act: DistributionalQNet2(hidden_sizes, activation)(obs, act)))
     q = hk.without_apply_rng(hk.transform(lambda obs, act: QNet_V(hidden_sizes, activation)(obs, act)))
     policy = hk.without_apply_rng(
@@ -175,7 +186,7 @@ def create_rf_net_visual(
         target_q2_params = q2_params
         policy_params = policy.init(policy_key, latent_obs, act, 0)
         target_policy_params = policy_params
-        log_alpha = jnp.array(math.log(5), dtype=jnp.float32)  # math.log(3) or math.log(5) choose one
+        log_alpha = jnp.array(math.log(init_alpha), dtype=jnp.float32)  # math.log(3) or math.log(5) choose one
         encoder_params = encoder.init(encoder_key, obs)
         return Diffv2Params(q1_params, q2_params, target_q1_params, target_q2_params, policy_params,
                             target_policy_params, log_alpha, encoder_params)
@@ -185,8 +196,10 @@ def create_rf_net_visual(
     sample_act = jnp.zeros((1, act_dim))
     params = init(key, sample_obs, sample_latent_obs, sample_act)
 
-    net = RFNet_V(q=q.apply, policy=policy.apply, encoder=encoder.apply, num_timesteps=num_timesteps,
+    net = RF2SACENTNet_V(q=q.apply, policy=policy.apply, encoder=encoder.apply, num_timesteps=num_timesteps,
                   num_timesteps_test=num_timesteps_test, act_dim=act_dim,
                   target_entropy=-act_dim * target_entropy_scale, num_particles=num_particles, noise_scale=noise_scale,
-                  noise_schedule='linear')
+                  noise_schedule='linear',
+                         alpha_value=alpha_value, fixed_alpha=fixed_alpha
+                         )
     return net, params

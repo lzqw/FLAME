@@ -5,9 +5,13 @@ import numpy as np
 import optax
 import haiku as hk
 import pickle
+from jax.experimental.shard_map import shard_map
+from jax.sharding import Mesh, PartitionSpec as P
+import pickle
+from functools import partial
 
 from relax.algorithm.base import Algorithm
-from relax.network.rf_v import RFNet_V, Diffv2Params
+from relax.network.rf2_sac_ent_v import RF2SACENTNet_V, Diffv2Params
 from relax.utils.experience import Experience
 from relax.utils.typing import Metric
 
@@ -59,10 +63,10 @@ def augment_batch(obs: jnp.ndarray,
         jnp.reshape(next_obs, (next_obs.shape[0], -1)))
 
 
-class RF_V(Algorithm):
+class RF2SACENT_V(Algorithm):
     def __init__(
         self,
-        agent: RFNet_V,
+        agent: RF2SACENTNet_V,
         params: Diffv2Params,
         *,
         gamma: float = 0.99,
@@ -76,6 +80,9 @@ class RF_V(Algorithm):
         use_ema: bool = True,
         temperature: float = 1.0,
         total_step: int = 100000,
+        sample_k: int = 500,
+        alpha_value: float = 0.01,
+        fixed_alpha: bool = True,
     ):
         self.agent = agent
         self.gamma = gamma
@@ -112,6 +119,8 @@ class RF_V(Algorithm):
         )
         self.use_ema = use_ema
         self.temperature = temperature
+        self.fixed_alpha = fixed_alpha
+        self.alpha_value = alpha_value
         self.total_step = total_step
 
         @jax.jit
@@ -128,7 +137,7 @@ class RF_V(Algorithm):
             step = state.step
             running_mean = state.running_mean
             running_std = state.running_std
-            next_eval_key, obs_aug_key, next_obs_aug_key, flow_time_key, flow_noise_key = jax.random.split(key, 5)
+            next_eval_key, new_eval_key,obs_aug_key, next_obs_aug_key, log_alpha_key,flow_time_key, flow_noise_key = jax.random.split(key, 7)
 
             # data augmentation
             obs, next_obs = augment_batch(obs, next_obs, obs_aug_key, next_obs_aug_key)
@@ -143,7 +152,6 @@ class RF_V(Algorithm):
                 q = jnp.minimum(q1, q2)
                 return q
 
-            current_noise_scale = 1 - (step / self.total_step)
             next_action = self.agent.get_action(next_eval_key,
                                                 (policy_params, log_alpha, q1_params, q2_params, encoder_params),
                                                 next_obs)
@@ -175,29 +183,65 @@ class RF_V(Algorithm):
             q2_params = optax.apply_updates(q2_params, q2_update)
             encoder_params = optax.apply_updates(encoder_params, encoder_update)
 
+            flow_time_key, time_rng = jax.random.split(flow_time_key, 2)
+            flow_noise_key, noise_rng = jax.random.split(flow_noise_key, 2)
+            t = jax.random.uniform(flow_time_key, shape=(next_obs.shape[0],), minval=1e-3, maxval=0.9946)
+            t = jnp.expand_dims(t, axis=1)
+            noise_sample = jax.random.normal(flow_noise_key, action.shape)
+
+            def q_sample(t: int, x_start: jax.Array, noise: jax.Array):
+                return t * x_start + (1 - t) * noise
+
+            noisy_actions = q_sample(t, action, noise_sample)
+            noisy_actions=noisy_actions.clip(-1,1)
+
+            #TODO: is a1=(1/t)at+(1-t)/t*et or a1=(1/t)at-(1-t)/t*et
+            noisy_actions_repeat = jnp.repeat(jnp.expand_dims(noisy_actions, axis=1), axis=1, repeats=self.K)
+            std = jnp.expand_dims((1-t) / t, axis=-1)
+            lower_bound = 1 / (1-t)[:, :, None] * noisy_actions_repeat - (1 / std)
+            upper_bound = 1 / (1-t)[:, :, None] * noisy_actions_repeat + (1 / std)
+            #action: batch_size, action_dim
+            tnormal_noise = jax.random.truncated_normal(
+                key, lower=lower_bound, upper=upper_bound, shape=(action.shape[0], self.K, action.shape[1]))
+            flow_noise_key,noise_rng=jax.random.split(flow_noise_key,2)
+            normal_noise = jax.random.normal(flow_noise_key, shape=((action.shape[0], self.K, action.shape[1])))
+            normal_noise_clip = jnp.clip(normal_noise, min=lower_bound, max=upper_bound)
+            noise = jnp.where(jnp.isnan(tnormal_noise), normal_noise_clip, tnormal_noise)
+            clean_samples = 1 / t[:, :, None] * noisy_actions_repeat - std * noise
+
+            observations_repeat = jnp.repeat(jnp.expand_dims(obs, axis=1), axis=1, repeats=self.K)
+
+            devices = jax.devices()
+            compute_Q_DDP = partial(shard_map, mesh=Mesh(devices, ('i',)), in_specs=(P('i'), P('i')), out_specs=(P('i')))(get_min_q)
+            critic = compute_Q_DDP( observations_repeat, clean_samples)  # batch_size, K
+
+            critic = critic / jnp.float32(agent.alpha_value)
+
+            q_mean, q_std = critic.mean(), critic.std()
+            Z = jax.nn.logsumexp(critic, axis=1, keepdims=True)  # [batch_size, 1]
+            q_weights = jnp.exp(critic - Z) # [batch_size, mc_num]
+
+            clean_samples_reshape=clean_samples.reshape(-1, clean_samples.shape[-1])
+            obs_reshape = observations_repeat.reshape(-1, observations_repeat.shape[-1])
+            noise_reshape=noise.reshape(-1, noise.shape[-1])
+            u=clean_samples_reshape-noise_reshape
+            t_reshape = jnp.repeat(t.squeeze(), repeats=self.K)
+            noisy_actions_reshape=noisy_actions_repeat.reshape(-1, noisy_actions_repeat.shape[-1])
+            weight_reshape=q_weights.reshape(-1,1)
+
+
             def policy_loss_fn(policy_params) -> jax.Array:
-                q_min = get_min_q(next_obs, next_action)
-                q_mean, q_std = q_min.mean(), q_min.std()
-
-                # norm_q = (q_min - running_mean) / running_std
-                norm_q = q_min / running_std
-                # norm_q = q_min
-
-                # scaled_q = norm_q.clip(-3., 3.) / jnp.exp(log_alpha)
-                # scaled_q = norm_q / jnp.exp(log_alpha)
-                scaled_q = norm_q / self.temperature
-                q_weights = jnp.exp(scaled_q)
 
                 def denoiser(t, x):
-                    return self.agent.policy(policy_params, next_obs, x, t)
+                    return self.agent.policy(policy_params, obs_reshape, x, t)
 
-                t = jax.random.uniform(flow_time_key, shape=(next_obs.shape[0],), minval=0.0, maxval=1.0)
-                loss = self.agent.flow.weighted_p_loss(flow_noise_key, q_weights, denoiser, t,
-                                                       jax.lax.stop_gradient(next_action))
-                return loss, (q_weights, scaled_q, q_mean, q_std, norm_q)
+                loss = self.agent.flow.reverse_weighted_p_loss2(denoiser, t_reshape, noisy_actions_reshape,
+                                                                jax.lax.stop_gradient(weight_reshape),
+                                                            jax.lax.stop_gradient(u))
+                return loss, (weight_reshape, critic, q_mean, q_std)
 
-            (total_loss, (q_weights, scaled_q, q_mean, q_std, norm_q)), policy_grads = jax.value_and_grad(
-                policy_loss_fn, has_aux=True)(policy_params)
+
+            (total_loss, (weight, u_estimation, critic_mean, critic_std)), policy_grads = jax.value_and_grad(policy_loss_fn, has_aux=True)(policy_params)
 
             # update alpha
             def log_alpha_loss_fn(log_alpha: jax.Array) -> jax.Array:
@@ -269,20 +313,16 @@ class RF_V(Algorithm):
                 "q2_loss": q2_loss,
                 "policy_loss": total_loss,
                 "alpha": jnp.exp(log_alpha),
-                "q_weights_std": jnp.std(q_weights),
-                "q_weights_mean": jnp.mean(q_weights),
-                "q_weights_min": jnp.min(q_weights),
-                "q_weights_max": jnp.max(q_weights),
-                "scale_q_mean": jnp.mean(scaled_q),
-                "scale_q_std": jnp.std(scaled_q),
-                "norm_q_mean": jnp.mean(norm_q),
-                "norm_q_std": jnp.std(norm_q),
-                "norm_q_max": jnp.max(norm_q),
-                "norm_q_min": jnp.min(norm_q),
+                "weights_std": jnp.std(weight),
+                "weights_mean": jnp.mean(weight),
+                "weights_min": jnp.min(weight),
+                "weights_max": jnp.max(weight),
+                "u_estimation_mean": jnp.mean(u_estimation),
+                "u_estimation_std": jnp.std(u_estimation),
+                "critic_mean": critic_mean,
+                "critic_std": critic_std,
                 "running_q_mean": new_running_mean,
                 "running_q_std": new_running_std,
-                "entropy_approx": 0.5 * self.agent.act_dim * jnp.log(
-                    2 * jnp.pi * jnp.exp(1) * (0.1 * jnp.exp(log_alpha)) ** 2),
             }
             return state, info
 
