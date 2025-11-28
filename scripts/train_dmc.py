@@ -33,8 +33,8 @@ from relax.utils.log_diff import log_git_details
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
-    parser.add_argument("--alg", type=str, default="rf_v")
-    parser.add_argument("--env", type=str, default="Ant-v4")
+    parser.add_argument("--alg", type=str, default="dm_control_walker_walk-v0")
+    parser.add_argument("--env", type=str, default="")
     parser.add_argument("--suffix", type=str, default="test_use_atp1")
     parser.add_argument("--num_vec_envs", type=int, default=5)
     parser.add_argument("--hidden_num", type=int, default=3)
@@ -42,7 +42,7 @@ if __name__ == "__main__":
     parser.add_argument("--diffusion_steps", type=int, default=20)
     parser.add_argument("--diffusion_steps_test", type=int, default=20)
     parser.add_argument("--diffusion_hidden_dim", type=int, default=256)
-    parser.add_argument("--start_step", type=int, default=int(3e4)) # other envs 3e4
+    parser.add_argument("--start_step", type=int, default=int(3e4))  # other envs 3e4
     parser.add_argument("--total_step", type=int, default=int(1e6))
     parser.add_argument("--lr", type=float, default=3e-4)
     parser.add_argument("--lr_schedule_end", type=float, default=3e-5)
@@ -59,12 +59,13 @@ if __name__ == "__main__":
 
     if args.debug:
         from jax import config
+
         config.update("jax_disable_jit", True)
 
     master_seed = args.seed
     master_rng, _ = seeding(master_seed)
     env_seed, env_action_seed, eval_env_seed, buffer_seed, init_network_seed, train_seed = map(
-        int, master_rng.integers(0, 2**32 - 1, 6)
+        int, master_rng.integers(0, 2 ** 32 - 1, 6)
     )
     init_network_key = jax.random.key(init_network_seed)
     train_key = jax.random.key(train_seed)
@@ -87,30 +88,36 @@ if __name__ == "__main__":
     if args.alg == 'sdac':
         def mish(x: jax.Array):
             return x * jnp.tanh(jax.nn.softplus(x))
+
+
         agent, params = create_sdac_net(init_network_key, obs_dim, act_dim, hidden_sizes, diffusion_hidden_sizes, mish,
-                                          num_timesteps=args.diffusion_steps, 
-                                          num_particles=args.num_particles, 
-                                          noise_scale=args.noise_scale,
-                                          target_entropy_scale=args.target_entropy_scale)
-        algorithm = SDAC(agent, params, lr=args.lr, alpha_lr=args.alpha_lr, 
-                           delay_alpha_update=args.delay_alpha_update,
-                             lr_schedule_end=args.lr_schedule_end,
-                             use_ema=args.use_ema_policy)
+                                        num_timesteps=args.diffusion_steps,
+                                        num_particles=args.num_particles,
+                                        noise_scale=args.noise_scale,
+                                        target_entropy_scale=args.target_entropy_scale)
+        algorithm = SDAC(agent, params, lr=args.lr, alpha_lr=args.alpha_lr,
+                         delay_alpha_update=args.delay_alpha_update,
+                         lr_schedule_end=args.lr_schedule_end,
+                         use_ema=args.use_ema_policy)
     elif args.alg == 'rf_v':
         def mish(x: jax.Array):
             return x * jnp.tanh(jax.nn.softplus(x))
-        agent, params = create_rf_net_visual(init_network_key, obs_dim, latent_obs_dim, act_dim, hidden_sizes, diffusion_hidden_sizes, mish,
-                                          num_timesteps=args.diffusion_steps, 
-                                          num_timesteps_test=args.diffusion_steps_test,
-                                          num_particles=args.num_particles, 
-                                          noise_scale=args.noise_scale,
-                                          target_entropy_scale=args.target_entropy_scale)
-        algorithm = RF_V(agent, params, lr=args.lr, alpha_lr=args.alpha_lr, 
-                           delay_alpha_update=args.delay_alpha_update,
-                             lr_schedule_end=args.lr_schedule_end,
-                             use_ema=args.use_ema_policy)
+
+
+        agent, params = create_rf_net_visual(init_network_key, obs_dim, latent_obs_dim, act_dim, hidden_sizes,
+                                             diffusion_hidden_sizes, mish,
+                                             num_timesteps=args.diffusion_steps,
+                                             num_timesteps_test=args.diffusion_steps_test,
+                                             num_particles=args.num_particles,
+                                             noise_scale=args.noise_scale,
+                                             target_entropy_scale=args.target_entropy_scale)
+        algorithm = RF_V(agent, params, lr=args.lr, alpha_lr=args.alpha_lr,
+                         delay_alpha_update=args.delay_alpha_update,
+                         lr_schedule_end=args.lr_schedule_end,
+                         use_ema=args.use_ema_policy)
     elif args.alg == "qsm":
-        agent, params = create_qsm_net(init_network_key, obs_dim, act_dim, hidden_sizes, num_timesteps=20, num_particles=args.num_particles)
+        agent, params = create_qsm_net(init_network_key, obs_dim, act_dim, hidden_sizes, num_timesteps=20,
+                                       num_particles=args.num_particles)
         algorithm = QSM(agent, params, lr=args.lr, lr_schedule_end=args.lr_schedule_end)
     elif args.alg == "sac":
         agent, params = create_sac_net(init_network_key, obs_dim, act_dim, hidden_sizes, gelu)
@@ -124,40 +131,51 @@ if __name__ == "__main__":
     elif args.alg == "dacer":
         def mish(x: jax.Array):
             return x * jnp.tanh(jax.nn.softplus(x))
-        agent, params = create_dacer_net(init_network_key, obs_dim, act_dim, hidden_sizes, diffusion_hidden_sizes, mish, 
+
+
+        agent, params = create_dacer_net(init_network_key, obs_dim, act_dim, hidden_sizes, diffusion_hidden_sizes, mish,
                                          num_timesteps=args.diffusion_steps)
         algorithm = DACER(agent, params, lr=args.lr, lr_schedule_end=args.lr_schedule_end)
     elif args.alg == "dacer_doubleq":
         def mish(x: jax.Array):
             return x * jnp.tanh(jax.nn.softplus(x))
-        agent, params = create_dacer_doubleq_net(init_network_key, obs_dim, act_dim, hidden_sizes, diffusion_hidden_sizes, mish, num_timesteps=args.diffusion_steps)
+
+
+        agent, params = create_dacer_doubleq_net(init_network_key, obs_dim, act_dim, hidden_sizes,
+                                                 diffusion_hidden_sizes, mish, num_timesteps=args.diffusion_steps)
         algorithm = DACERDoubleQ(agent, params, lr=args.lr)
     elif args.alg == "dipo":
         diffusion_buffer = TreeBuffer.from_example(
             ObsActionPair.create_example(obs_dim, act_dim),
             args.total_step,
-            int(master_rng.integers(0, 2**32 - 1)),
+            int(master_rng.integers(0, 2 ** 32 - 1)),
             remove_batch_dim=False
         )
         TreeBuffer.connect(buffer, diffusion_buffer, lambda exp: ObsActionPair(exp.obs, exp.action))
 
+
         def mish(x: jax.Array):
             return x * jnp.tanh(jax.nn.softplus(x))
 
+
         agent, params = create_dipo_net(init_network_key, obs_dim, act_dim, hidden_sizes, num_timesteps=100)
-        algorithm = DIPO(agent, params, diffusion_buffer, lr=args.lr, action_gradient_steps=30, policy_target_delay=2, action_grad_norm=0.16)
+        algorithm = DIPO(agent, params, diffusion_buffer, lr=args.lr, action_gradient_steps=30, policy_target_delay=2,
+                         action_grad_norm=0.16)
     elif args.alg == "qvpo":
         def mish(x: jax.Array):
             return x * jnp.tanh(jax.nn.softplus(x))
+
+
         agent, params = create_qvpo_net(init_network_key, obs_dim, act_dim, hidden_sizes, diffusion_hidden_sizes, mish,
-                                          num_timesteps=args.diffusion_steps,
-                                          num_particles=args.num_particles,
-                                          noise_scale=args.noise_scale)
+                                        num_timesteps=args.diffusion_steps,
+                                        num_particles=args.num_particles,
+                                        noise_scale=args.noise_scale)
         algorithm = QVPO(agent, params, lr=args.lr, alpha_lr=args.alpha_lr, delay_alpha_update=args.delay_alpha_update)
     else:
         raise ValueError(f"Invalid algorithm {args.alg}!")
 
-    exp_dir = PROJECT_ROOT / "logs" / args.env / (args.alg + '_' + time.strftime("%Y-%m-%d_%H-%M-%S") + f'_s{args.seed}_{args.suffix}')
+    exp_dir = PROJECT_ROOT / "logs" / args.env / (
+            args.alg + '_' + time.strftime("%Y-%m-%d_%H-%M-%S") + f'_s{args.seed}_{args.suffix}')
     trainer = OffPolicyTrainer(
         env=env,
         algorithm=algorithm,
@@ -173,7 +191,7 @@ if __name__ == "__main__":
 
     trainer.setup(Experience.create_example(obs_dim, act_dim, trainer.batch_size))
     log_git_details(log_file=os.path.join(exp_dir, 'git.diff'))
-    
+
     # Save the arguments to a YAML file
     args_dict = vars(args)
     with open(os.path.join(exp_dir, 'config.yaml'), 'w') as yaml_file:

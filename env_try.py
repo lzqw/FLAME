@@ -1,6 +1,51 @@
 import gymnasium as gym
-env_hopper = gym.make("HalfCheetah-v5")
+import shimmy
 
-# 获取动作空间
-action_space_hopper = env_hopper.action_space
-print(action_space_hopper)
+"""
+['dm_control/acrobot-swingup-v0', 'dm_control/acrobot-swingup_sparse-v0', 'dm_control/ball_in_cup-catch-v0',
+'dm_control/cartpole-balance-v0', 'dm_control/cartpole-balance_sparse-v0', 'dm_control/cartpole-swingup-v0',
+'dm_control/cartpole-swingup_sparse-v0', 'dm_control/cartpole-two_poles-v0', 'dm_control/cartpole-three_poles-v0',
+'dm_control/cheetah-run-v0', 'dm_control/dog-stand-v0', 'dm_control/dog-walk-v0', 'dm_control/dog-trot-v0',
+'dm_control/dog-run-v0', 'dm_control/dog-fetch-v0', 'dm_control/finger-spin-v0', 'dm_control/finger-turn_easy-v0',
+'dm_control/finger-turn_hard-v0', 'dm_control/fish-upright-v0', 'dm_control/fish-swim-v0', 'dm_control/hopper-stand-v0',
+'dm_control/hopper-hop-v0', 'dm_control/humanoid-stand-v0', 'dm_control/humanoid-walk-v0', 'dm_control/humanoid-run-v0',
+'dm_control/humanoid-run_pure_state-v0', 'dm_control/humanoid_CMU-stand-v0', 'dm_control/humanoid_CMU-walk-v0',
+'dm_control/humanoid_CMU-run-v0', 'dm_control/lqr-lqr_2_1-v0', 'dm_control/lqr-lqr_6_2-v0',
+'dm_control/manipulator-bring_ball-v0', 'dm_control/manipulator-bring_peg-v0', 'dm_control/manipulator-insert_ball-v0',
+'dm_control/manipulator-insert_peg-v0', 'dm_control/pendulum-swingup-v0', 'dm_control/point_mass-easy-v0',
+'dm_control/point_mass-hard-v0', 'dm_control/quadruped-walk-v0', 'dm_control/quadruped-run-v0',
+'dm_control/quadruped-escape-v0', 'dm_control/quadruped-fetch-v0', 'dm_control/reacher-easy-v0',
+'dm_control/reacher-hard-v0', 'dm_control/stacker-stack_2-v0', 'dm_control/stacker-stack_4-v0',
+'dm_control/swimmer-swimmer6-v0', 'dm_control/swimmer-swimmer15-v0', 'dm_control/walker-stand-v0',
+'dm_control/walker-walk-v0', 'dm_control/walker-run-v0', 'dm_control/CmuHumanoidRunWalls-v0',
+'dm_control/CmuHumanoidRunGaps-v0', 'dm_control/CmuHumanoidGoToTarget-v0', 'dm_control/CmuHumanoidMazeForage-v0',
+'dm_control/CmuHumanoidHeterogeneousForage-v0', 'dm_control/RodentEscapeBowl-v0', 'dm_control/RodentRunGaps-v0',
+'dm_control/RodentMazeForage-v0', 'dm_control/RodentTwoTouch-v0', 'dm_control/stack_2_bricks_features-v0',
+'dm_control/stack_2_bricks_vision-v0', 'dm_control/stack_2_bricks_moveable_base_features-v0',
+'dm_control/stack_2_bricks_moveable_base_vision-v0', 'dm_control/stack_3_bricks_features-v0',
+'dm_control/stack_3_bricks_vision-v0', 'dm_control/stack_3_bricks_random_order_features-v0',
+'dm_control/stack_2_of_3_bricks_random_order_features-v0', 'dm_control/stack_2_of_3_bricks_random_order_vision-v0',
+'dm_control/reassemble_3_bricks_fixed_order_features-v0', 'dm_control/reassemble_3_bricks_fixed_order_vision-v0',
+'dm_control/reassemble_5_bricks_random_order_features-v0', 'dm_control/reassemble_5_bricks_random_order_vision-v0',
+'dm_control/lift_brick_features-v0', 'dm_control/lift_brick_vision-v0', 'dm_control/lift_large_box_features-v0',
+'dm_control/lift_large_box_vision-v0', 'dm_control/place_brick_features-v0', 'dm_control/place_brick_vision-v0',
+'dm_control/place_cradle_features-v0', 'dm_control/place_cradle_vision-v0', 'dm_control/reach_duplo_features-v0',
+'dm_control/reach_duplo_vision-v0', 'dm_control/reach_site_features-v0', 'dm_control/reach_site_vision-v0']
+
+"""
+# env = gym.make("dm_control/walker-walk-v0", render_mode="human")
+# env = gym.make("dm_control/ball_in_cup-catch-v0", render_mode="human")
+# env = gym.make("dm_control/cartpole-swingup-v0", render_mode="human")
+# env = gym.make("dm_control/finger-spin-v0", render_mode="human")
+# env = gym.make("dm_control/cheetah-run-v0", render_mode="human")
+# env = gym.make("dm_control/dog-trot-v0", render_mode="human")
+# env = gym.make("dm_control/dog-stand-v0", render_mode="human")
+env = gym.make("dm_control/dog-walk-v0", render_mode="human")
+observation, info = env.reset(seed=42)
+for _ in range(1000):
+   action = env.action_space.sample()  # this is where you would insert your policy
+   observation, reward, terminated, truncated, info = env.step(action)
+
+   if terminated or truncated:
+      observation, info = env.reset()
+env.close()

@@ -105,16 +105,16 @@ Registered: dm_control_walker_run-v0
 
 if __name__ == "__main__":
     env = make_dm_control_env("walker", "walk")
-    
+
     obs, info = env.reset()
     print("Initial observation:", obs)
 
     done = False
-    step_num = 0 
+    step_num = 0
     while not done:
         action = env.action_space.sample()
         obs, reward, done, truncated, info = env.step(action)
-        step_num += 1 
+        step_num += 1
     print("Step observation:", obs, "Reward:", reward, "Done:", done)
     print("Step number:", step_num)
 

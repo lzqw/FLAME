@@ -27,7 +27,7 @@ class SACTrainState(NamedTuple):
 
 class SAC_V(Algorithm):
     def __init__(self, agent: SACNet_V, params: SACParams, *, gamma: float = 0.99, lr: float = 1e-4,
-                 alpha_lr: float = 3e-4, tau: float = 0.005, reward_scale: float = 0.2,):
+                 alpha_lr: float = 3e-4, tau: float = 0.005, reward_scale: float = 0.2, ):
         self.agent = agent
         self.gamma = gamma
         self.tau = tau
@@ -77,8 +77,9 @@ class SAC_V(Algorithm):
                 q2_loss = jnp.mean((q2 - q_backup) ** 2)
                 q_loss = q1_loss + q2_loss
                 return q_loss, (q1_loss, q2_loss, q1, q2, obs_latent)
-            
-            (q_loss, (q1_loss, q2_loss, q1, q2, obs_latent)), (q1_grads, q2_grads, encoder_grads) = jax.value_and_grad(q_loss_fn, argnums=(0, 1, 2), has_aux=True)(q1_params, q2_params, encoder_params)
+
+            (q_loss, (q1_loss, q2_loss, q1, q2, obs_latent)), (q1_grads, q2_grads, encoder_grads) = jax.value_and_grad(
+                q_loss_fn, argnums=(0, 1, 2), has_aux=True)(q1_params, q2_params, encoder_params)
             obs_latent = jax.lax.stop_gradient(obs_latent)
             q1_update, q1_opt_state = self.optim.update(q1_grads, q1_opt_state)
             q2_update, q2_opt_state = self.optim.update(q2_grads, q2_opt_state)
@@ -115,8 +116,10 @@ class SAC_V(Algorithm):
             target_q2_params = optax.incremental_update(q2_params, target_q2_params, self.tau)
 
             state = SACTrainState(
-                params=SACParams(q1_params, q2_params, target_q1_params, target_q2_params, policy_params, log_alpha, encoder_params),
-                opt_state=SACOptStates(q1_opt_state, q2_opt_state, policy_opt_state, log_alpha_opt_state, encoder_opt_state),
+                params=SACParams(q1_params, q2_params, target_q1_params, target_q2_params, policy_params, log_alpha,
+                                 encoder_params),
+                opt_state=SACOptStates(q1_opt_state, q2_opt_state, policy_opt_state, log_alpha_opt_state,
+                                       encoder_opt_state),
             )
             info = {
                 "q1_loss": q1_loss,
@@ -145,7 +148,7 @@ class SAC_V(Algorithm):
     def get_action(self, key: jax.Array, obs: np.ndarray) -> np.ndarray:
         action = self._get_action(key, self.get_policy_params_to_save(), obs)
         return np.asarray(action)
-    
+
     def warmup(self, data: tuple) -> None:
         key = jax.random.key(0)
         obs, _, _, _, _ = data
