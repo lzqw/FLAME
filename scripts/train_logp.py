@@ -1,3 +1,13 @@
+import os
+
+# ==========================================
+# [关键修改 1] 设置环境变量防止 OOM
+# 必须在 import jax 之前设置
+# ==========================================
+os.environ['XLA_PYTHON_CLIENT_PREALLOCATE'] = 'false'
+# 如果仍然报错，取消下面这行的注释，限制只使用 50% 显存
+# os.environ['XLA_PYTHON_CLIENT_MEM_FRACTION'] = '.50'
+
 import jax
 import jax.numpy as jnp
 import haiku as hk
@@ -13,8 +23,6 @@ import math
 # 1. 定义真实分布 (Ground Truth)
 # ==========================================
 class ToyGMM:
-    """复现图中描述的四个高斯分量"""
-
     def __init__(self):
         self.means = np.array([[-0.5, -0.5], [-0.5, 0.5], [0.5, 0.5], [0.5, -0.5]])
         self.std = 0.1
@@ -22,13 +30,11 @@ class ToyGMM:
         self.weights = np.array([0.25, 0.25, 0.25, 0.25])
 
     def sample(self, n):
-        """用于训练的数据采样"""
         indices = np.random.choice(4, size=n, p=self.weights)
         samples = np.array([np.random.multivariate_normal(self.means[i], self.cov) for i in indices])
         return jnp.array(samples)
 
     def log_prob(self, x, y):
-        """用于绘制 Ground Truth (a)"""
         pos = np.dstack((x, y))
         p = np.zeros(x.shape)
         for i, mean in enumerate(self.means):
@@ -37,7 +43,7 @@ class ToyGMM:
 
 
 # ==========================================
-# 2. 改进后的网络定义 (Time Embedding + Wide MLP)
+# 2. 网络定义 (优化版)
 # ==========================================
 class TimestepEmbedding(hk.Module):
     def __init__(self, dim):
@@ -45,7 +51,6 @@ class TimestepEmbedding(hk.Module):
         self.dim = dim
 
     def __call__(self, t):
-        # t: [batch, 1]
         half_dim = self.dim // 2
         emb = math.log(10000) / (half_dim - 1)
         emb = jnp.exp(jnp.arange(half_dim) * -emb)
@@ -57,30 +62,24 @@ class TimestepEmbedding(hk.Module):
 
 
 def net_fn(x, t):
-    """
-    改进点 1: 引入正弦时间编码 + 宽 MLP (256)
-    """
-    # 确保 t 的形状正确
+    # [关键修改 3] 网络宽度从 256 降为 128，节省显存，同时保持表达能力
+    hidden_dim = 128
+
     if t.ndim == 0: t = t * jnp.ones((x.shape[0], 1))
     if t.ndim == 1: t = t.reshape(-1, 1)
 
-    # 1. 时间编码 (64维)
-    t_embed_dim = 64
-    t_emb = TimestepEmbedding(t_embed_dim)(t)
+    t_emb = TimestepEmbedding(64)(t)
 
-    # 2. 特征融合
-    x_embed = hk.Linear(256)(x)
-    t_embed = hk.Linear(256)(t_emb)
+    x_embed = hk.Linear(hidden_dim)(x)
+    t_embed = hk.Linear(hidden_dim)(t_emb)
 
-    # 使用 Swish (SiLU) 激活函数，通常在 Flow Matching 中表现更好
     h = jax.nn.silu(x_embed + t_embed)
 
-    # 3. 主干网络 (宽 MLP)
     mlp = hk.Sequential([
-        hk.Linear(256), jax.nn.silu,
-        hk.Linear(256), jax.nn.silu,
-        hk.Linear(256), jax.nn.silu,
-        hk.Linear(2)  # 输出维度
+        hk.Linear(hidden_dim), jax.nn.silu,
+        hk.Linear(hidden_dim), jax.nn.silu,
+        hk.Linear(hidden_dim), jax.nn.silu,
+        hk.Linear(2)
     ])
 
     return mlp(h)
@@ -95,10 +94,6 @@ class Estimator:
 
     def compute_log_likelihood(self, key: jax.Array, params: hk.Params, act: jax.Array,
                                num_steps: int) -> jax.Array:
-        """
-        基于 rf2_sac_ent_net.py 逻辑的对数似然估算
-        """
-
         def model_fn(t, x):
             return self.policy(params, x, t)
 
@@ -140,29 +135,25 @@ class Estimator:
 # 4. 主程序
 # ==========================================
 def main():
-    # 初始化
     rng = jax.random.PRNGKey(42)
     gmm = ToyGMM()
 
-    # 初始化网络
     rng, init_rng = jax.random.split(rng)
     dummy_x = jnp.zeros((1, 2))
     dummy_t = jnp.zeros((1, 1))
     network = hk.without_apply_rng(hk.transform(net_fn))
     params = network.init(init_rng, dummy_x, dummy_t)
 
-    # 改进点 2: 学习率衰减 (Cosine Decay Schedule)
-    # 增加总步数到 20000 以获得精细收敛
+    # 保持 20000 步以获得好效果
     total_steps = 20000
     lr_schedule = optax.cosine_decay_schedule(
         init_value=1e-3,
         decay_steps=total_steps,
-        alpha=1e-2  # 结束时 lr = 1e-5
+        alpha=1e-2
     )
     optimizer = optax.adam(learning_rate=lr_schedule)
     opt_state = optimizer.init(params)
 
-    # Loss 函数: Flow Matching
     @jax.jit
     def loss_fn(params, x_1, key):
         x_0 = jax.random.normal(key, x_1.shape)
@@ -179,28 +170,23 @@ def main():
         new_params = optax.apply_updates(params, updates)
         return new_params, new_opt_state
 
-    # ---------------------------
-    # 训练循环
-    # ---------------------------
     print(f"Training toy model (Flow Matching) for {total_steps} steps...")
 
-    # 使用 jax.lax.scan 或者简单的 python loop (这里用 python loop 方便打印进度)
+    # [关键修改 2] Batch Size 降为 256
+    batch_size = 256
+
     for i in range(total_steps):
         rng, step_key = jax.random.split(rng)
-        batch = gmm.sample(512)  # batch size 512
+        batch = gmm.sample(batch_size)
         params, opt_state = update(params, opt_state, batch, step_key)
 
         if (i + 1) % 2000 == 0:
             print(f"Step {i + 1}/{total_steps}")
 
-    # ---------------------------
-    # 绘图逻辑
-    # ---------------------------
     print("Generating Figure 11...")
-
     estimator = Estimator(network.apply)
 
-    # 网格数据
+    # 网格
     grid_size = 50
     x = np.linspace(-1, 1, grid_size)
     y = np.linspace(-1, 1, grid_size)
@@ -208,22 +194,17 @@ def main():
     points = np.stack([X.flatten(), Y.flatten()], axis=1)
     points_jax = jnp.array(points)
 
-    # 改进点 4: 修复 JIT 报错，显式包裹
     def estimate_grid_impl(key, T, N):
-        """内部实现函数"""
         keys = jax.random.split(key, N)
-        # vmap over keys (Sample Number N)
         logp_samples = jax.vmap(
             lambda k: estimator.compute_log_likelihood(k, params, points_jax, T)
         )(keys)
-        # Average over N samples
         logp_avg = jnp.mean(logp_samples, axis=0)
         return logp_avg.reshape(grid_size, grid_size)
 
-    # 显式 JIT 编译，指定 T(arg 1) 和 N(arg 2) 为静态参数
+    # 显式 JIT
     estimate_grid = jax.jit(estimate_grid_impl, static_argnums=(1, 2))
 
-    # 准备绘图
     fig = plt.figure(figsize=(14, 6), dpi=100)
     gs = gridspec.GridSpec(2, 4, width_ratios=[1, 0.2, 1, 1])
 
@@ -231,8 +212,6 @@ def main():
     ax_true = fig.add_subplot(gs[:, 0])
     Z_true = gmm.log_prob(X, Y)
 
-    # 改进点 3: 统一色阶 (Vmin/Vmax)
-    # 获取真实分布的范围，强制应用于所有子图
     vmin, vmax = Z_true.min(), Z_true.max()
 
     im_true = ax_true.contourf(X, Y, Z_true, levels=50, cmap='viridis', vmin=vmin, vmax=vmax)
@@ -256,7 +235,6 @@ def main():
         Z_est = estimate_grid(key, T_val, N_val)
 
         ax = fig.add_subplot(gs[row, col])
-        # 使用统一色阶 vmin/vmax
         im = ax.contourf(X, Y, Z_est, levels=50, cmap='viridis', vmin=vmin, vmax=vmax)
         ax.set_aspect('equal')
 
