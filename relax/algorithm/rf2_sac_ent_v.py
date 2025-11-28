@@ -210,8 +210,8 @@ class RF2SACENT_V(Algorithm):
             noise = jnp.where(jnp.isnan(tnormal_noise), normal_noise_clip, tnormal_noise)
             clean_samples = 1 / t[:, :, None] * noisy_actions_repeat - std * noise
 
-            observations_repeat = jnp.repeat(jnp.expand_dims(obs, axis=1), axis=1, repeats=self.K)
-
+            obs_encoded = self.agent.encoder(encoder_params, obs)
+            observations_repeat = jnp.repeat(jnp.expand_dims(obs_encoded, axis=1), axis=1, repeats=self.K)
             devices = jax.devices()
             compute_Q_DDP = partial(shard_map, mesh=Mesh(devices, ('i',)), in_specs=(P('i'), P('i')), out_specs=(P('i')))(get_min_q)
             critic = compute_Q_DDP( observations_repeat, clean_samples)  # batch_size, K
