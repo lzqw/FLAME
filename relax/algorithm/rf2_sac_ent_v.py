@@ -121,6 +121,7 @@ class RF2SACENT_V(Algorithm):
         self.temperature = temperature
         self.fixed_alpha = fixed_alpha
         self.alpha_value = alpha_value
+        self.K=sample_k
         self.total_step = total_step
 
         @jax.jit

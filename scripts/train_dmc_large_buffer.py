@@ -66,6 +66,7 @@ if __name__ == "__main__":
     parser.add_argument("--n_step", type=int, default=1)
     parser.add_argument("--reward_scale", type=float, default=1.0)
     parser.add_argument("--sample_per_iteration", type=int, default=1)
+    parser.add_argument("--sample_k", type=int, default=2)
     parser.add_argument("--update_per_iteration", type=int, default=1)
     parser.add_argument("--temperature", type=float, default=1.0)
     args = parser.parse_args()
@@ -184,6 +185,7 @@ if __name__ == "__main__":
                              lr_schedule_end=args.lr_schedule_end,
                              use_ema=args.use_ema_policy,
                              reward_scale=args.reward_scale,
+                                sample_k=args.sample_k,
                              temperature=args.temperature)
     else:
         raise ValueError(f"Invalid algorithm {args.alg}!")
