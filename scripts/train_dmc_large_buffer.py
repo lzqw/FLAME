@@ -105,7 +105,7 @@ if __name__ == "__main__":
     replay_storage = ReplayBufferStorage(data_specs, exp_dir / 'buffer', args.num_vec_envs)
     buffer = make_replay_loader(
         exp_dir / 'buffer', args.replay_buffer_size,
-        args.batch_size, num_workers=4, save_snapshot=False, nstep=args.n_step, discount=args.gamma)
+        args.batch_size, num_workers=1, save_snapshot=False, nstep=args.n_step, discount=args.gamma)
 
     gelu = partial(jax.nn.gelu, approximate=False)
 
