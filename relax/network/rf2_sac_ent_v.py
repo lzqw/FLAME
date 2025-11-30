@@ -28,6 +28,7 @@ class RF2SACENTNet_V:
     policy: Callable[[hk.Params, jax.Array, jax.Array, jax.Array], jax.Array]
     encoder: Callable[[hk.Params, jax.Array], jax.Array]
     num_timesteps: int
+    num_ent_timesteps: int
     num_timesteps_test: int
     act_dim: int
     num_particles: int
@@ -153,6 +154,101 @@ class RF2SACENTNet_V:
         policy_params = (policy_params, log_alpha, q1_params, q2_params, encoder_params)
         return self.get_action_full(key, policy_params, obs)
 
+    def get_action_ent(self, key: jax.Array, policy_params: hk.Params, obs: jax.Array) -> jax.Array:
+        policy_params, log_alpha, q1_params, q2_params, _ = policy_params
+
+        def model_fn(t, x):
+            return self.policy(policy_params, obs, x, t)
+
+        def sample(key: jax.Array) -> Union[jax.Array, jax.Array]:
+            sample_key, gnoise_key = jax.random.split(key, 2)
+            act = self.flow.p_sample(sample_key, model_fn, (*obs.shape[:-1], self.act_dim))
+            if self.fixed_alpha:
+                act = act + jax.random.normal(noise_key, act.shape) * jnp.exp(0.1) * self.noise_scale
+            else:
+                act = act + jax.random.normal(noise_key, act.shape) * jnp.exp(log_alpha) * self.noise_scale
+            q1 = self.q(q1_params, obs, act)
+            q2 = self.q(q2_params, obs, act)
+            q = jnp.minimum(q1, q2)
+            return act.clip(-1, 1), q
+
+        sample_key, noise_key, entropy_key = jax.random.split(key, 3)
+        if self.num_particles == 1:
+            act = sample(key)[0]
+        else:
+            keys = jax.random.split(key, self.num_particles)
+            acts, qs = jax.vmap(sample)(keys)
+            q_best_ind = jnp.argmax(qs, axis=0, keepdims=True)
+            act = jnp.take_along_axis(acts, q_best_ind[..., None], axis=0).squeeze(axis=0)
+
+        log_prob = self.compute_log_likelihood(entropy_key, policy_params, obs, act)
+
+        # Entropy is the negative log probability
+        entropy = -log_prob
+
+        # act = act + jax.random.normal(noise_key, act.shape) * jnp.exp(log_alpha) * self.noise_scale / 2
+        return act, entropy
+
+    def compute_log_likelihood(self, key: jax.Array, policy_params: hk.Params, obs: jax.Array,
+                               act: jax.Array) -> jax.Array:
+        """
+        Computes the log-likelihood of actions using the instantaneous change of variables formula.
+        This involves solving an ODE backwards in time with a reverse Euler solver.
+        """
+
+        def model_fn(t, x):
+            # The velocity model u_t(x) for a given observation
+            return self.policy(policy_params, obs, x, t)
+
+        # Base distribution p_0 is a standard normal
+        def log_p0(z):
+            return jax.scipy.stats.norm.logpdf(z).sum(axis=-1)
+
+        # We need a single random vector Z for the trace estimator for the entire trajectory
+        z_key, _ = jax.random.split(key)
+        z = jax.random.normal(z_key, act.shape)
+
+        # The dynamics of the augmented ODE system for [f(t), g(t)]
+        def ode_dynamics(state, t):
+            f_t, _ = state
+            # Function for VJP: u_t(f_t)
+            u_t_fn = lambda x: model_fn(t, x)
+            # Compute VJP to get Z^T * J
+            _, vjp_fn = jax.vjp(u_t_fn, f_t)
+            vjp_z = vjp_fn(z)[0]
+            # Hutchinson's trace estimator: trace(J) ≈ Z^T * J * Z
+            trace_term = jnp.sum(vjp_z * z, axis=-1)
+
+            df_dt = u_t_fn(f_t)
+            dg_dt = -trace_term
+            return df_dt, dg_dt
+
+        # Set up the reverse Euler integration using jax.lax.scan for performance
+        num_steps = self.num_ent_timesteps
+        dt = -1.0 / num_steps
+
+        def solver_step(state, t):
+            f_t, g_t = state
+            df_dt, dg_dt = ode_dynamics(state, t)
+            f_next = f_t + df_dt * dt
+            g_next = g_t + dg_dt * dt
+            return (f_next, g_next), None
+
+        # Time steps for reverse integration from t=1 down to nearly t=0
+        timesteps = jnp.linspace(1.0, 1.0 / num_steps, num_steps)
+
+        # Initial state at t=1
+        initial_state = (act, jnp.zeros(act.shape[:-1]))
+
+        # Run the solver
+        final_state, _ = jax.lax.scan(solver_step, initial_state, timesteps)
+        f_0, g_0 = final_state
+
+        # Final log probability: log p_1(x) = log p_0(f(0)) - g(0)
+        log_p1 = log_p0(f_0) - g_0
+
+        return log_p1
+
 
 def create_rf2_sac_ent_net_visual(
     key: jax.Array,
@@ -163,6 +259,7 @@ def create_rf2_sac_ent_net_visual(
     diffusion_hidden_sizes: Sequence[int],
     activation: Activation = jax.nn.relu,
     num_timesteps: int = 20,
+    num_ent_timesteps: int = 20,
     num_timesteps_test: int = 20,
     num_particles: int = 32,
     noise_scale: float = 0.05,

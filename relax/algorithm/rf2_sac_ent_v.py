@@ -78,7 +78,6 @@ class RF2SACENT_V(Algorithm):
         delay_update: int = 2,
         reward_scale: float = 1.0,
         use_ema: bool = True,
-        temperature: float = 1.0,
         total_step: int = 100000,
         sample_k: int = 500,
         alpha_value: float = 0.01,
@@ -118,7 +117,6 @@ class RF2SACENT_V(Algorithm):
             running_std=jnp.float32(1.0)
         )
         self.use_ema = use_ema
-        self.temperature = temperature
         self.fixed_alpha = fixed_alpha
         self.alpha_value = alpha_value
         self.K=sample_k
@@ -153,14 +151,19 @@ class RF2SACENT_V(Algorithm):
                 q = jnp.minimum(q1, q2)
                 return q
 
-            next_action = self.agent.get_action(next_eval_key,
-                                                (policy_params, log_alpha, q1_params, q2_params, encoder_params),
-                                                next_obs)
+            next_action, entropy = self.agent.get_action_ent(next_eval_key,
+                                                             (policy_params, log_alpha, q1_params, q2_params),
+                                                             next_obs)
             # next_action = self.agent.get_action(next_eval_key, (policy_params, jnp.log(current_noise_scale), q1_params, q2_params, encoder_params), next_obs)
             q1_target = self.agent.q(target_q1_params, next_obs, next_action)
             q2_target = self.agent.q(target_q2_params, next_obs, next_action)
-            q_target = jnp.minimum(q1_target, q2_target)  # - jnp.exp(log_alpha) * next_logp
-            q_backup = reward + discount * q_target
+
+            if self.fixed_alpha:
+                q_target = jnp.minimum(q1_target, q2_target)  - jnp.float32(self.alpha_value) * entropy
+            else:
+                q_target = jnp.minimum(q1_target, q2_target) - jnp.exp(log_alpha) * entropy
+
+            q_backup = reward + discount* q_target # self.gamma
 
             def q_loss_fn(q1_params: hk.Params, q2_params: hk.Params, encoder_params: hk.Params) -> jax.Array:
                 obs_latent = self.agent.encoder(encoder_params, obs)
@@ -216,7 +219,11 @@ class RF2SACENT_V(Algorithm):
             compute_Q_DDP = partial(shard_map, mesh=Mesh(devices, ('i',)), in_specs=(P('i'), P('i')), out_specs=(P('i')))(get_min_q)
             critic = compute_Q_DDP( observations_repeat, clean_samples)  # batch_size, K
 
-            critic = critic / jnp.float32(agent.alpha_value)
+            if self.fixed_alpha:
+                critic=critic/jnp.float32(agent.alpha_value)
+            else:
+                safe_alpha = jnp.maximum(jnp.exp(log_alpha), 0.001)
+                critic=critic/safe_alpha
 
             q_mean, q_std = critic.mean(), critic.std()
             Z = jax.nn.logsumexp(critic, axis=1, keepdims=True)  # [batch_size, 1]
@@ -246,10 +253,9 @@ class RF2SACENT_V(Algorithm):
 
             # update alpha
             def log_alpha_loss_fn(log_alpha: jax.Array) -> jax.Array:
-                approx_entropy = 0.5 * self.agent.act_dim * jnp.log(
-                    2 * jnp.pi * jnp.exp(1) * (0.1 * jnp.exp(log_alpha)) ** 2)
-                log_alpha_loss = -1 * log_alpha * (
-                        -1 * jax.lax.stop_gradient(approx_entropy) + self.agent.target_entropy)
+                approx_entropy = jnp.mean(entropy)
+                #log_alpha_loss = jnp.mean(log_alpha * (approx_entropy-self.agent.target_entropy))
+                log_alpha_loss = jnp.mean(log_alpha * (approx_entropy-self.agent.target_entropy))
                 return log_alpha_loss
 
             # update networks
@@ -302,7 +308,7 @@ class RF2SACENT_V(Algorithm):
                 opt_state=Diffv2OptStates(q1=q1_opt_state, q2=q2_opt_state, policy=policy_opt_state,
                                           log_alpha=log_alpha_opt_state, encoder=encoder_opt_state),
                 step=step + 1,
-                entropy=jnp.float32(0.0),
+                entropy=entropy,
                 running_mean=new_running_mean,
                 running_std=new_running_std
             )

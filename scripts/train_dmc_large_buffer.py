@@ -36,6 +36,15 @@ from relax.utils.log_diff import log_git_details
 
 import warnings
 warnings.filterwarnings("ignore", message="Explicitly requested dtype float64")
+def str2bool(v):
+    if isinstance(v, bool):
+        return v
+    if v.lower() in ('yes', 'true', 't', 'y', '1'):
+        return True
+    elif v.lower() in ('no', 'false', 'f', 'n', '0'):
+        return False
+    else:
+        raise argparse.ArgumentTypeError('Boolean value expected.')
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
@@ -52,8 +61,8 @@ if __name__ == "__main__":
     parser.add_argument("--total_step", type=int, default=int(1e6)) #1e6
     parser.add_argument("--lr", type=float, default=3e-4)
     parser.add_argument("--lr_schedule_end", type=float, default=3e-5)
-    parser.add_argument("--alpha_lr", type=float, default=7e-3)
-    parser.add_argument("--delay_alpha_update", type=float, default=250)
+    parser.add_argument("--alpha_lr", type=float, default=5e-3)
+    parser.add_argument("--delay_alpha_update", type=float, default=20)
     parser.add_argument("--seed", type=int, default=100)
     parser.add_argument("--num_particles", type=int, default=32)
     parser.add_argument("--noise_scale", type=float, default=0.001)
@@ -68,7 +77,9 @@ if __name__ == "__main__":
     parser.add_argument("--sample_per_iteration", type=int, default=1)
     parser.add_argument("--sample_k", type=int, default=100)
     parser.add_argument("--update_per_iteration", type=int, default=1)
-    parser.add_argument("--temperature", type=float, default=1.0)
+    parser.add_argument("--fix_alpha", type=str2bool, default=False)
+    parser.add_argument("--alpha", type=float, default=0.01)
+    parser.add_argument("--init_alpha", type=float, default=0.2)
     args = parser.parse_args()
 
     if args.debug:
@@ -179,14 +190,19 @@ if __name__ == "__main__":
                                           num_timesteps_test=args.diffusion_steps_test,
                                           num_particles=args.num_particles,
                                           noise_scale=args.noise_scale,
-                                          target_entropy_scale=args.target_entropy_scale)
+                                          target_entropy_scale=args.target_entropy_scale,
+                                               alpha_value=args.alpha,
+                                               fixed_alpha=args.fix_alpha,
+                                               init_alpha=args.init_alpha)
+
         algorithm = RF2SACENT_V(agent, params, gamma=args.gamma, lr=args.lr, alpha_lr=args.alpha_lr,
                            delay_alpha_update=args.delay_alpha_update,
                              lr_schedule_end=args.lr_schedule_end,
                              use_ema=args.use_ema_policy,
                              reward_scale=args.reward_scale,
                                 sample_k=args.sample_k,
-                             temperature=args.temperature)
+                                alpha_value=args.alpha,
+                                fixed_alpha=args.fix_alpha)
     else:
         raise ValueError(f"Invalid algorithm {args.alg}!")
 
