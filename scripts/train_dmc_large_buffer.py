@@ -16,6 +16,8 @@ from relax.algorithm.mf_v import MF_V
 from relax.algorithm.mf2_v import MF2_V
 from relax.algorithm.dpmd_v import DPMD_V
 from relax.algorithm.rf2_sac_ent_v import RF2SACENT_V
+from relax.algorithm.mf2_sac_ent_v import MF2SACENT_V
+
 
 from relax.buffer.large import ReplayBufferStorage, ReplayBuffer
 from relax.buffer.large import make_replay_loader
@@ -25,6 +27,7 @@ from relax.network.mf_v import create_mf_net_visual
 from relax.network.mf2_v import create_mf2_net_visual
 from relax.network.dpmd_v import create_dpmd_net_visual
 from relax.network.rf2_sac_ent_v import create_rf2_sac_ent_net_visual
+from relax.network.mf2_sac_ent_v import create_mf2_sac_ent_net_visual
 
 from relax.trainer.off_policy_visual import OffPolicyTrainer
 from relax.env import create_env, create_vector_env
@@ -196,6 +199,27 @@ if __name__ == "__main__":
                                                init_alpha=args.init_alpha)
 
         algorithm = RF2SACENT_V(agent, params, gamma=args.gamma, lr=args.lr, alpha_lr=args.alpha_lr,
+                           delay_alpha_update=args.delay_alpha_update,
+                             lr_schedule_end=args.lr_schedule_end,
+                             use_ema=args.use_ema_policy,
+                             reward_scale=args.reward_scale,
+                                sample_k=args.sample_k,
+                                alpha_value=args.alpha,
+                                fixed_alpha=args.fix_alpha)
+    elif args.alg == 'mf2_sac_ent_v':
+        def mish(x: jax.Array):
+            return x * jnp.tanh(jax.nn.softplus(x))
+        agent, params = create_mf2_sac_ent_net_visual(init_network_key, obs_dim, latent_obs_dim, act_dim, hidden_sizes, diffusion_hidden_sizes, mish,
+                                          num_timesteps=args.diffusion_steps,
+                                          num_timesteps_test=args.diffusion_steps_test,
+                                          num_particles=args.num_particles,
+                                          noise_scale=args.noise_scale,
+                                          target_entropy_scale=args.target_entropy_scale,
+                                               alpha_value=args.alpha,
+                                               fixed_alpha=args.fix_alpha,
+                                               init_alpha=args.init_alpha)
+
+        algorithm = MF2SACENT_V(agent, params, gamma=args.gamma, lr=args.lr, alpha_lr=args.alpha_lr,
                            delay_alpha_update=args.delay_alpha_update,
                              lr_schedule_end=args.lr_schedule_end,
                              use_ema=args.use_ema_policy,
