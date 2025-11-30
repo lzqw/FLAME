@@ -152,7 +152,7 @@ class RF2SACENT_V(Algorithm):
                 return q
 
             next_action, entropy = self.agent.get_action_ent(next_eval_key,
-                                                             (policy_params, log_alpha, q1_params, q2_params),
+                                                             (policy_params, log_alpha, q1_params, q2_params,encoder_params),
                                                              next_obs)
             # next_action = self.agent.get_action(next_eval_key, (policy_params, jnp.log(current_noise_scale), q1_params, q2_params, encoder_params), next_obs)
             q1_target = self.agent.q(target_q1_params, next_obs, next_action)

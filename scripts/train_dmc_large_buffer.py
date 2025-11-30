@@ -22,7 +22,7 @@ from relax.buffer.large import make_replay_loader
 from relax.network.sac_v import create_sac_net_visual
 from relax.network.rf_v import create_rf_net_visual
 from relax.network.mf_v import create_mf_net_visual
-from relax.network.mf2_sac_ent_v import create_mf2_net_visual
+from relax.network.mf2_v import create_mf2_net_visual
 from relax.network.dpmd_v import create_dpmd_net_visual
 from relax.network.rf2_sac_ent_v import create_rf2_sac_ent_net_visual
 

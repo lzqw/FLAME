@@ -7,7 +7,7 @@ import haiku as hk
 import pickle
 
 from relax.algorithm.base import Algorithm
-from relax.network.mf2_sac_ent_v import MF2Net_V, Diffv2Params
+from relax.network.mf2_v import MF2Net_V, Diffv2Params
 from relax.utils.experience import Experience
 from relax.utils.typing import Metric
 
