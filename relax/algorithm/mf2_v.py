@@ -7,7 +7,7 @@ import haiku as hk
 import pickle
 
 from relax.algorithm.base import Algorithm
-from relax.network.mf2_v import MF2Net_V, Diffv2Params
+from relax.network.mf2_sac_ent_v import MF2Net_V, Diffv2Params
 from relax.utils.experience import Experience
 from relax.utils.typing import Metric
 
@@ -35,14 +35,14 @@ def augment_batch(obs: jnp.ndarray,
                   next_obs_key: jax.Array,
                   padding: int = 4
                  ) -> Tuple[jnp.ndarray, jnp.ndarray]:
-    
+
     def random_crop(key, img, padding):
         crop_from = jax.random.randint(key, (2, ), 0, 2 * padding + 1)
         crop_from = jnp.concatenate([crop_from, jnp.zeros((1, ), dtype=jnp.int32)])
         padded_img = jnp.pad(img, ((padding, padding), (padding, padding), (0, 0)),
                             mode='edge')
         return jax.lax.dynamic_slice(padded_img, crop_from, img.shape)
-    
+
     obs_keys = jax.random.split(obs_key, obs.shape[0])
     obs = jnp.reshape(obs, (obs.shape[0], -1, 84, 84))
     obs = obs.transpose((0, 2, 3, 1))
@@ -144,7 +144,7 @@ class MF2_V(Algorithm):
             q2_target = self.agent.q(target_q2_params, next_obs, next_action)
             q_target = jnp.minimum(q1_target, q2_target)  # - jnp.exp(log_alpha) * next_logp
             q_backup = reward + discount * q_target
-            
+
             def q_loss_fn(q1_params: hk.Params, q2_params: hk.Params, encoder_params: hk.Params) -> jax.Array:
                 obs_latent = self.agent.encoder(encoder_params, obs)
                 q1 = self.agent.q(q1_params, obs_latent, action)
@@ -153,7 +153,7 @@ class MF2_V(Algorithm):
                 q2_loss = jnp.mean((q2 - q_backup) ** 2)
                 q_loss = q1_loss + q2_loss
                 return q_loss, (q1_loss, q2_loss, q1, q2, obs_latent)
-            
+
             (q_loss, (q1_loss, q2_loss, q1, q2, obs_latent)), (q1_grads, q2_grads, encoder_grads) = jax.value_and_grad(q_loss_fn, argnums=(0, 1, 2), has_aux=True)(q1_params, q2_params, encoder_params)
             q1_update, q1_opt_state = self.optim.update(q1_grads, q1_opt_state)
             q2_update, q2_opt_state = self.optim.update(q2_grads, q2_opt_state)
@@ -171,10 +171,10 @@ class MF2_V(Algorithm):
                 # q_weights = jnp.exp(scaled_q)
                 # def denoiser(x, r, t):
                 #     return self.agent.policy(policy_params, next_obs, x, r, t)
-                
+
                 # r0 = jax.random.uniform(r_key, shape=(next_obs.shape[0],), minval=0.0, maxval=1.0)
                 # #0.75
-                # mask = jax.random.bernoulli(mask_key, p=0.0, shape=(next_obs.shape[0],))  
+                # mask = jax.random.bernoulli(mask_key, p=0.0, shape=(next_obs.shape[0],))
                 # t0 = jax.random.uniform(t_key, shape=(next_obs.shape[0],), minval=0.0, maxval=1.0)
                 # is_t_gt_r = t0 > r0
                 # t_swap = jnp.where(is_t_gt_r, t0, r0)
@@ -184,7 +184,7 @@ class MF2_V(Algorithm):
 
                 # loss = 0.1 * self.agent.flow.weighted_p_loss(flow_noise_key, q_weights, denoiser, r_final, t_final,
                 #                                             jax.lax.stop_gradient(next_action))
-                
+
                 #obs
                 acts = self.agent.get_vanilla_action(acts_key, (policy_params, log_alpha, q1_params, q2_params, encoder_params), obs_latent)
                 q1_target = self.agent.q(target_q1_params, obs_latent, acts)
@@ -272,8 +272,8 @@ class MF2_V(Algorithm):
                 "entropy_approx": 0.5 * self.agent.act_dim * jnp.log( 2 * jnp.pi * jnp.exp(1) * (0.1 * jnp.exp(log_alpha)) ** 2),
             }
             return state, info
-        
-        self._implement_common_behavior(stateless_update, self.agent.get_action, self.agent.get_deterministic_action, 
+
+        self._implement_common_behavior(stateless_update, self.agent.get_action, self.agent.get_deterministic_action,
                                         stateless_get_action_full=self.agent.get_action_full,
                                         stateless_get_vanilla_action_step=self.agent.get_vanilla_action_step)
 
@@ -291,7 +291,7 @@ class MF2_V(Algorithm):
     def get_action(self, key: jax.Array, obs: np.ndarray) -> np.ndarray:
         action = self._get_action(key, self.get_policy_params_to_save(), obs)
         return np.asarray(action)
-    
+
     def warmup(self, data: tuple) -> None:
         key = jax.random.key(0)
         obs, _, _, _, _ = data

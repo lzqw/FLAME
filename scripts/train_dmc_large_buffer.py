@@ -22,7 +22,7 @@ from relax.buffer.large import make_replay_loader
 from relax.network.sac_v import create_sac_net_visual
 from relax.network.rf_v import create_rf_net_visual
 from relax.network.mf_v import create_mf_net_visual
-from relax.network.mf2_v import create_mf2_net_visual
+from relax.network.mf2_sac_ent_v import create_mf2_net_visual
 from relax.network.dpmd_v import create_dpmd_net_visual
 from relax.network.rf2_sac_ent_v import create_rf2_sac_ent_net_visual
 
@@ -65,7 +65,7 @@ if __name__ == "__main__":
     parser.add_argument("--delay_alpha_update", type=float, default=20)
     parser.add_argument("--seed", type=int, default=100)
     parser.add_argument("--num_particles", type=int, default=32)
-    parser.add_argument("--noise_scale", type=float, default=0.001)
+    parser.add_argument("--noise_scale", type=float, default=0.5)
     parser.add_argument("--target_entropy_scale", type=float, default=1.5)
     parser.add_argument("--replay_buffer_size", type=int, default=int(1e5))
     parser.add_argument("--debug", action='store_true', default=False)
@@ -75,11 +75,11 @@ if __name__ == "__main__":
     parser.add_argument("--n_step", type=int, default=1)
     parser.add_argument("--reward_scale", type=float, default=1.0)
     parser.add_argument("--sample_per_iteration", type=int, default=1)
-    parser.add_argument("--sample_k", type=int, default=100)
+    parser.add_argument("--sample_k", type=int, default=5)
     parser.add_argument("--update_per_iteration", type=int, default=1)
     parser.add_argument("--fix_alpha", type=str2bool, default=False)
     parser.add_argument("--alpha", type=float, default=0.01)
-    parser.add_argument("--init_alpha", type=float, default=0.2)
+    parser.add_argument("--init_alpha", type=float, default=0.5)
     args = parser.parse_args()
 
     if args.debug:

@@ -294,7 +294,7 @@ def create_rf2_sac_ent_net_visual(
     params = init(key, sample_obs, sample_latent_obs, sample_act)
 
     net = RF2SACENTNet_V(q=q.apply, policy=policy.apply, encoder=encoder.apply, num_timesteps=num_timesteps,
-                  num_timesteps_test=num_timesteps_test, act_dim=act_dim,
+                  num_timesteps_test=num_timesteps_test, act_dim=act_dim,num_ent_timesteps=num_ent_timesteps,
                   target_entropy=-act_dim * target_entropy_scale, num_particles=num_particles, noise_scale=noise_scale,
                   noise_schedule='linear',
                          alpha_value=alpha_value, fixed_alpha=fixed_alpha
