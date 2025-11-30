@@ -18,60 +18,6 @@ echo ""
 #echo ""
 
 
-python scripts/train_mujoco.py --env Pusher-v5 --diffusion_steps 20 --alg rf_sac_ent  --noise_scale 0.001 --target_entropy_scale 1.0
-python scripts/train_mujoco.py --env Pusher-v5 --diffusion_steps 20 --alg rf_sac_ent --noise_scale 0.005 --target_entropy_scale 1.0
-python scripts/train_mujoco.py --env Pusher-v5 --diffusion_steps 20 --alg rf_sac_ent  --noise_scale 0.01 --target_entropy_scale 1.0
-python scripts/train_mujoco.py --env Pusher-v5 --diffusion_steps 20 --alg rf_sac_ent  --noise_scale 0.1 --target_entropy_scale 1.0
-
-python scripts/train_mujoco.py --env Pusher-v5 --diffusion_steps 20 --alg rf_sac_ent  --noise_scale 0.001 --target_entropy_scale 0.5
-python scripts/train_mujoco.py --env Pusher-v5 --diffusion_steps 20 --alg rf_sac_ent  --noise_scale 0.001 --target_entropy_scale 2.0
-
-python scripts/train_mujoco.py --env Pusher-v5 --diffusion_steps 20 --alg rf_sac_ent --noise_scale 0.005 --target_entropy_scale 0.5
-python scripts/train_mujoco.py --env Pusher-v5 --diffusion_steps 20 --alg rf_sac_ent  --noise_scale 0.005 --target_entropy_scale 2.0
-
-python scripts/train_mujoco.py --env Pusher-v5 --diffusion_steps 20 --alg rf_sac_ent  --noise_scale 0.01 --target_entropy_scale 0.5
-python scripts/train_mujoco.py --env Pusher-v5 --diffusion_steps 20 --alg rf_sac_ent  --noise_scale 0.01 --target_entropy_scale 2.0
-
-python scripts/train_mujoco.py --env Pusher-v5 --diffusion_steps 20 --alg rf_sac_ent  --noise_scale 0.1 --target_entropy_scale 0.5
-python scripts/train_mujoco.py --env Pusher-v5 --diffusion_steps 20 --alg rf_sac_ent  --noise_scale 0.1 --target_entropy_scale 2.0
-
-
-
-python scripts/train_mujoco.py --env Reacher-v5 --diffusion_steps 20 --alg rf_sac_ent  --noise_scale 0.001 --target_entropy_scale 1.0
-python scripts/train_mujoco.py --env Reacher-v5 --diffusion_steps 20 --alg rf_sac_ent --noise_scale 0.005 --target_entropy_scale 1.0
-python scripts/train_mujoco.py --env Reacher-v5 --diffusion_steps 20 --alg rf_sac_ent  --noise_scale 0.01 --target_entropy_scale 1.0
-python scripts/train_mujoco.py --env Reacher-v5 --diffusion_steps 20 --alg rf_sac_ent  --noise_scale 0.1 --target_entropy_scale 1.0
-
-python scripts/train_mujoco.py --env Reacher-v5 --diffusion_steps 20 --alg rf_sac_ent  --noise_scale 0.001 --target_entropy_scale 0.5
-python scripts/train_mujoco.py --env Reacher-v5 --diffusion_steps 20 --alg rf_sac_ent  --noise_scale 0.001 --target_entropy_scale 2.0
-
-python scripts/train_mujoco.py --env Reacher-v5 --diffusion_steps 20 --alg rf_sac_ent --noise_scale 0.005 --target_entropy_scale 0.5
-python scripts/train_mujoco.py --env Reacher-v5 --diffusion_steps 20 --alg rf_sac_ent  --noise_scale 0.005 --target_entropy_scale 2.0
-
-python scripts/train_mujoco.py --env Reacher-v5 --diffusion_steps 20 --alg rf_sac_ent  --noise_scale 0.01 --target_entropy_scale 0.5
-python scripts/train_mujoco.py --env Reacher-v5 --diffusion_steps 20 --alg rf_sac_ent  --noise_scale 0.01 --target_entropy_scale 2.0
-
-python scripts/train_mujoco.py --env Reacher-v5 --diffusion_steps 20 --alg rf_sac_ent  --noise_scale 0.1 --target_entropy_scale 0.5
-python scripts/train_mujoco.py --env Reacher-v5 --diffusion_steps 20 --alg rf_sac_ent  --noise_scale 0.1 --target_entropy_scale 2.0
-
-
-python scripts/train_mujoco.py --env Ant-v5 --diffusion_steps 20 --alg rf_sac_ent  --noise_scale 0.001 --target_entropy_scale 1.0
-python scripts/train_mujoco.py --env Ant-v5 --diffusion_steps 20 --alg rf_sac_ent --noise_scale 0.005 --target_entropy_scale 1.0
-python scripts/train_mujoco.py --env Ant-v5 --diffusion_steps 20 --alg rf_sac_ent  --noise_scale 0.01 --target_entropy_scale 1.0
-python scripts/train_mujoco.py --env Ant-v5 --diffusion_steps 20 --alg rf_sac_ent  --noise_scale 0.1 --target_entropy_scale 1.0
-
-python scripts/train_mujoco.py --env Ant-v5 --diffusion_steps 20 --alg rf_sac_ent  --noise_scale 0.001 --target_entropy_scale 0.5
-python scripts/train_mujoco.py --env Ant-v5 --diffusion_steps 20 --alg rf_sac_ent  --noise_scale 0.001 --target_entropy_scale 2.0
-
-python scripts/train_mujoco.py --env Ant-v5 --diffusion_steps 20 --alg rf_sac_ent --noise_scale 0.005 --target_entropy_scale 0.5
-python scripts/train_mujoco.py --env Ant-v5 --diffusion_steps 20 --alg rf_sac_ent  --noise_scale 0.005 --target_entropy_scale 2.0
-
-python scripts/train_mujoco.py --env Ant-v5 --diffusion_steps 20 --alg rf_sac_ent  --noise_scale 0.01 --target_entropy_scale 0.5
-python scripts/train_mujoco.py --env Ant-v5 --diffusion_steps 20 --alg rf_sac_ent  --noise_scale 0.01 --target_entropy_scale 2.0
-
-python scripts/train_mujoco.py --env Ant-v5 --diffusion_steps 20 --alg rf_sac_ent  --noise_scale 0.1 --target_entropy_scale 0.5
-python scripts/train_mujoco.py --env Ant-v5 --diffusion_steps 20 --alg rf_sac_ent  --noise_scale 0.1 --target_entropy_scale 2.0
-
 
 python scripts/train_mujoco.py --env Swimmer-v5 --diffusion_steps 20 --alg rf_sac_ent  --noise_scale 0.001 --target_entropy_scale 1.0
 python scripts/train_mujoco.py --env Swimmer-v5 --diffusion_steps 20 --alg rf_sac_ent --noise_scale 0.005 --target_entropy_scale 1.0
