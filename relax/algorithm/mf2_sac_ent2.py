@@ -186,7 +186,7 @@ class MF2SACENT2(Algorithm):
             if self.fixed_alpha:
                 critic=critic/jnp.float32(agent.alpha_value)
             else:
-                safe_alpha = jnp.maximum(jnp.exp(log_alpha), 0.001)
+                safe_alpha = jnp.maximum(jnp.exp(log_alpha), 0.01)
                 critic=critic/safe_alpha
 
             q_mean, q_std = critic.mean(), critic.std()
@@ -212,6 +212,7 @@ class MF2SACENT2(Algorithm):
 
                 loss,dudt,u_out,dudt_out,dudt_max = self.agent.flow.reverse_weighted_p_loss(q_weights, denoiser, r, t,clean_samples,noise,
                                                                noisy_actions)
+                # loss*=0.0
                 u_pred=jnp.mean(u_out)
                 dudt_pred=jnp.mean(dudt_out)
                 # loss*
@@ -235,6 +236,7 @@ class MF2SACENT2(Algorithm):
             def log_alpha_loss_fn(log_alpha: jax.Array) -> jax.Array:
                 approx_entropy = jnp.mean(next_entropy)
                 log_alpha_loss = jnp.mean(log_alpha * (approx_entropy-self.agent.target_entropy))
+                # log_alpha_loss = jnp.mean(1 * (approx_entropy-self.agent.target_entropy))
                 return log_alpha_loss
 
             # update networks
