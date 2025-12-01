@@ -150,7 +150,7 @@ class MeanFlow:
 
         # 3. 计算初始分布的 Log Probability
         # [CRITICAL FIX]: 使用 axis=-1 确保对每个样本独立求和，保留 Batch 维度
-        log_p = jnp.sum(jax.scipy.stats.norm.logpdf(x, loc=0.0, scale=0.5), axis=-1)
+        log_p = jnp.sum(jax.scipy.stats.norm.logpdf(x, loc=0.0, scale=1.0), axis=-1)
 
         # 4. Hutchinson 探测向量
         epsilon = jax.random.normal(key_probe, shape)
@@ -170,7 +170,7 @@ class MeanFlow:
 
             # [CRITICAL FIX]: 只在特征维度求和 (axis=-1)，保留 (Batch,) 维度
             div_drift = jnp.sum(epsilon * jvp_val, axis=-1)
-
+            div_drift = jnp.clip(div_drift, -10.0, 10.0)
             x_next = x - drift
             next_log_p = current_log_p + div_drift
 
