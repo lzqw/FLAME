@@ -269,25 +269,17 @@ class MF2SACENT2Net:
 
     def get_action_entropy_singlestep(self, key: jax.Array, policy_params: hk.Params, obs: jax.Array,
                                       num_probes: int = 1) -> Tuple[jax.Array, jax.Array]:
-        """
-        基于方法 A：单步离散映射的熵估计和动作采样。
-        执行 1-NFE 生成，并同时估计熵。
-        """
         policy_params_only, log_alpha, q1_params, q2_params = policy_params
         batch_size = obs.shape[0]
 
-        # 1. 基础熵常量
         base_entropy = (self.act_dim / 2.0) * (1.0 + math.log(2 * math.pi))
 
         def single_sample_fn(k, o):
             key_z, key_eps = jax.random.split(k)
 
-            # 采样先验 Z1
             z1 = jax.random.normal(key_z, shape=(self.act_dim,))
 
-            # 定义流场 u(z, 0, 1)
             def flow_map(z):
-                # r=0, t=1
                 return self.policy(policy_params_only, o, z, 0.0, 1.0)
 
             epsilon = jax.random.normal(key_eps, shape=(self.act_dim,))
@@ -297,7 +289,7 @@ class MF2SACENT2Net:
 
             entropy = base_entropy - trace
 
-            return act.clip(-1, 1), entropy
+            return act, entropy
 
         keys = jax.random.split(key, batch_size)
         acts, entropies = jax.vmap(single_sample_fn)(keys, obs)
@@ -309,9 +301,95 @@ class MF2SACENT2Net:
         else:
             acts = acts + jax.random.normal(noise_key, acts.shape) * jnp.exp(log_alpha) * self.noise_scale
 
+        return acts.clip(-1,1), entropies
+
+
+    def get_action_entropy_multistep(self, key: jax.Array, policy_params: hk.Params, obs: jax.Array,
+                                     num_steps: int = 2) -> Tuple[jax.Array, jax.Array]:
+        """
+        基于多步流匹配采样的熵估计 (Multi-step Flow Matching).
+        通过将 [0, 1] 区间切分为 num_steps 段，缓解单步 Jacobian 线性化的截断误差。
+
+        Args:
+            num_steps: 步数。推荐 2 或 4。步数越多估计越准，能达到的熵下界越低。
+        """
+        policy_params_only, log_alpha, q1_params, q2_params = policy_params
+        batch_size = obs.shape[0]
+
+        # 1. 基础熵常量 H(Prior)
+        base_entropy = (self.act_dim / 2.0) * (1.0 + math.log(2 * math.pi))
+
+        # 定义单个样本的处理函数 (将被 vmap)
+        def single_sample_fn(k, o):
+            key_z, key_eps = jax.random.split(k)
+
+            # 初始状态 Z1 (Noise, t=1)
+            z_current = jax.random.normal(key_z, shape=(self.act_dim,))
+
+            # Hutchinson 探测向量 (在整个轨迹中复用同一个 epsilon 也是一种常见做法，省计算)
+            epsilon = jax.random.normal(key_eps, shape=(self.act_dim,))
+
+            # 定义每一步的时间间隔 dt
+            dt = 1.0 / num_steps
+
+            # 扫描函数：从 t=1 积分到 t=0
+            def scan_body(carry, step_idx):
+                z, trace_accum = carry
+
+                # 当前时间段：从 t_start 降到 t_end
+                # 例如 2步: [1.0 -> 0.5], [0.5 -> 0.0]
+                t_start = 1.0 - step_idx * dt
+                t_end = 1.0 - (step_idx + 1) * dt
+
+                # 定义该小步的流函数
+                def step_flow_map(x_in):
+                    # MeanFlow 模型预测的是位移: u(x, r, t)
+                    # 按照 flow.py 的惯例，输入 (x, 小时间, 大时间)
+                    # 我们要预测从 t_start 到 t_end 的位移，即 x_start - x_end
+                    return self.policy(policy_params_only, o, x_in, t_end, t_start)
+
+                # 计算位移(drift) 和 JVP
+                drift, tangent = jax.jvp(step_flow_map, (z,), (epsilon,))
+
+                # 计算当前步的散度贡献: epsilon^T * J * epsilon
+                step_trace = jnp.dot(epsilon, tangent)
+
+                # [Trick] 截断一下 Trace，防止数值爆炸导致 Alpha 震荡
+                # 这个 trick 在你的 flow.py p_sample_ent 中也有用到
+                step_trace = jnp.clip(step_trace, -100.0, 100.0)
+
+                # 更新状态: x_next = x - drift (向 t=0 演化)
+                z_next = z - drift
+                trace_next = trace_accum + step_trace
+
+                return (z_next, trace_next), None
+
+            # 执行多步循环
+            # carry 初始化: (z_init, 0.0)
+            (z_final, total_trace), _ = jax.lax.scan(scan_body, (z_current, 0.0), jnp.arange(num_steps))
+
+            # 最终动作
+            act = z_final
+
+            # 熵计算: H(Data) = H(Noise) - Sum(Trace)
+            entropy = base_entropy - total_trace
+
+            # 如果你之前特意注释掉了 base_entropy，可以改回: entropy = -total_trace
+            # 但为了达到 Target (如 -6)，你需要 base_entropy (约 +8) 来抵消
+            return act.clip(-1, 1), entropy
+
+        keys = jax.random.split(key, batch_size)
+        acts, entropies = jax.vmap(single_sample_fn)(keys, obs)
+
+        # 添加探索噪声 (训练阶段)
+        noise_key = jax.random.split(key)[0]
+        if self.fixed_alpha:
+            acts = acts + jax.random.normal(noise_key, acts.shape) * jnp.float32(0.1) * self.noise_scale
+        else:
+            # 注意: 这里的 log_alpha 是 SAC 自动调整的，现在有了更准的熵估计，它应该能正常工作了
+            acts = acts + jax.random.normal(noise_key, acts.shape) * jnp.exp(log_alpha) * self.noise_scale
+
         return acts, entropies
-
-
 def create_mf2_sac_ent2_net(
     key: jax.Array,
     obs_dim: int,

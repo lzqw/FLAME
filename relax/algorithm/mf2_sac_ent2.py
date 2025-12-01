@@ -219,7 +219,7 @@ class MF2SACENT2(Algorithm):
                 q1_target = self.agent.q(target_q1_params, obs, acts)
                 q2_target = self.agent.q(target_q2_params, obs, acts)
                 q_target = jnp.minimum(q1_target, q2_target)
-                # loss += jnp.mean(-q_target)
+                loss += jnp.mean(-q_target)
 
                 return loss, (jnp.sum(q_weights),
                               Z,
