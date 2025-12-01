@@ -205,56 +205,78 @@ class MF2SACENT2Net:
         return log_p1
 
     def compute_log_likelihood_nw(self, key: jax.Array, policy_params: hk.Params, obs: jax.Array,
-                               act: jax.Array) -> jax.Array:
-        def model_fn(t, x):
-            return self.policy(policy_params, obs, x, t)
+                                  act: jax.Array) -> jax.Array:
 
-        def model_fn(t, x):
-            r_scalar = jnp.maximum(0.0, t - 1/self.num_ent_timesteps)
+        # 1. 定义 dt_step (正数)
+        num_steps = self.num_ent_timesteps
+        dt_step = 1.0 / num_steps
 
-            t_batch = jnp.full((x.shape[0],), t)
+        # 2. 修改 model_fn: 将位移转换为速度
+        def velocity_fn(t, x):
+            # MeanFlow 的 drift 是定义在 [t, t+dt] (或类似区间) 的位移
+            # 这里我们需要将其转化为瞬时速度 v = displacement / dt
+            # 注意：如果 model 接受的输入是 (x, start_t, end_t)，需根据训练时的定义调整
+            # 假设 model 输出对应 dt_step 长度的位移：
+            r_scalar = t
+            t_scalar = t + dt_step
+
+            # 构造 batch
             r_batch = jnp.full((x.shape[0],), r_scalar)
+            t_batch = jnp.full((x.shape[0],), t_scalar)
 
-            return self.policy(policy_params, obs, x, r_batch, t_batch)
+            displacement = self.policy(policy_params, obs, x, r_batch, t_batch)
 
-        def log_p0(z):
-            return jax.scipy.stats.norm.logpdf(z).sum(axis=-1)
+            return displacement / dt_step
 
-        z_key, _ = jax.random.split(key)
-        z = jax.random.normal(z_key, act.shape)
-
-        # The dynamics of the augmented ODE system for [f(t), g(t)]
+        # 3. 定义 CNF 动力学 (Data -> Noise, t: 0 -> 1)
         def ode_dynamics(state, t):
             f_t, _ = state
-            # Function for VJP: u_t(f_t)
-            u_t_fn = lambda x: model_fn(t, x)
-            # Compute VJP to get Z^T * J
-            _, vjp_fn = jax.vjp(u_t_fn, f_t)
+
+            # 定义当前时刻的速度函数
+            v_t_fn = lambda x: velocity_fn(t, x)
+
+            # 计算速度
+            v_t = v_t_fn(f_t)
+
+            # 计算 Jacobian 的迹 (Trace)
+            z_key, _ = jax.random.split(key)  # 注意：这里为了演示简化了 key 的处理，实际需在外部传入或正确 split
+            z = jax.random.normal(z_key, act.shape)
+            _, vjp_fn = jax.vjp(v_t_fn, f_t)
             vjp_z = vjp_fn(z)[0]
-            # Hutchinson's trace estimator: trace(J) ≈ Z^T * J * Z
             trace_term = jnp.sum(vjp_z * z, axis=-1)
 
-            df_dt = u_t_fn(f_t)
-            dg_dt = -trace_term
+            df_dt = v_t
+            dg_dt = -trace_term  # Log probability 变化率
             return df_dt, dg_dt
-
-        num_steps = self.num_ent_timesteps
-        dt = -1.0 / num_steps
 
         def solver_step(state, t):
             f_t, g_t = state
             df_dt, dg_dt = ode_dynamics(state, t)
-            f_next = f_t + df_dt * dt
-            g_next = g_t + dg_dt * dt
+
+            # 正向积分: t 增加，x 随速度变化
+            f_next = f_t + df_dt * dt_step
+            g_next = g_t + dg_dt * dt_step
             return (f_next, g_next), None
 
-        timesteps = jnp.linspace(1.0, 1.0 / num_steps, num_steps)
+        # 4. 积分设置: 从 0.0 (Data) 到 1.0 (Noise)
+        timesteps = jnp.linspace(0.0, 1.0 - dt_step, num_steps)
+
+        # 初始状态: Data (act)
         initial_state = (act, jnp.zeros(act.shape[:-1]))
 
         final_state, _ = jax.lax.scan(solver_step, initial_state, timesteps)
-        f_0, g_0 = final_state
-        log_p1 = log_p0(f_0) - g_0
+        f_1, g_1 = final_state
 
+        # Log p(data) = Log p(noise) - (- delta_logp) = Log p(noise) + delta_logp
+        # 通常 CNF 公式: log p(x0) = log p(x1) - \int div(v) dt
+        # 这里 log p(x_data) = log p(x_noise) + \int_{0}^{1} div(v) dt
+        # 代码中 g 累积的是 -trace，所以 g_1 = - \int trace
+        # log p(act) = log_p0(f_1) - g_1
+
+        def log_p0(z):
+            return jax.scipy.stats.norm.logpdf(z).sum(axis=-1)
+
+        log_p1 = log_p0(f_1) - g_1
         return log_p1
 
     def get_action_ent(self, key: jax.Array, policy_params: hk.Params, obs: jax.Array) -> Tuple[jax.Array, jax.Array]:
