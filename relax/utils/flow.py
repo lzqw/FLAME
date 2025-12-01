@@ -238,7 +238,7 @@ class MeanFlow:
         u_tgt_estimation = jax.lax.stop_gradient(u_tgt)
         weighted_error = weights[:, :, None] * optax.squared_error(u_pred, u_tgt_estimation)
 
-        loss = jnp.mean(weighted_error)
+        loss = jnp.mean(jnp.sum(weighted_error, axis=1))
 
         return loss, jax.lax.stop_gradient(dudt), jax.lax.stop_gradient(u_pred_b_k_d),jax.lax.stop_gradient(dudt),jax.lax.stop_gradient(dudt_max_value)
 

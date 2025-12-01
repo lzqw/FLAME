@@ -290,23 +290,10 @@ class MF2SACENT2Net:
                 # r=0, t=1
                 return self.policy(policy_params_only, o, z, 0.0, 1.0)
 
-            # 计算动作: Z0 = Z1 - u(Z1)
-            # 这里的 1.0 是 (t-r) = 1-0
-            u_val, jvp_val = jax.jvp(flow_map, (z1,), (jax.random.normal(key_eps, shape=(self.act_dim,)),))
-
-            # 动作生成 (1-NFE)
-            act = z1 - u_val
-
-            # 熵估计 (Hutchinson)
-            # 使用刚才 JVP 计算中的 epsilon 和 output
-            # 注意：上面的 jvp 调用只做了一次探测。如果需要更精准，需要多次探测。
-            # 为了效率，这里复用一次探测的结果（虽然有偏差，但在RL训练中通常够用）
-            # 如果需要严格的 num_probes，需要重新跑循环
-
-            # 下面是更严谨的实现：
             epsilon = jax.random.normal(key_eps, shape=(self.act_dim,))
-            _, tangent = jax.jvp(flow_map, (z1,), (epsilon,))
+            u, tangent = jax.jvp(flow_map, (z1,), (epsilon,))
             trace = jnp.dot(epsilon, tangent)
+            act=z1-u
 
             entropy = base_entropy - trace
 
