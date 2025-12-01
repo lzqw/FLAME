@@ -97,7 +97,7 @@ if __name__ == "__main__":
     parser.add_argument("--lr", type=float, default=3e-4)
     parser.add_argument("--lr_schedule_end", type=float, default=3e-5)
     parser.add_argument("--alpha_lr", type=float, default=0.005)
-    parser.add_argument("--delay_alpha_update", type=float, default=20)
+    parser.add_argument("--delay_alpha_update", type=float, default=100)
     parser.add_argument("--seed", type=int, default=100)
     parser.add_argument("--num_particles", type=int, default=32)
     parser.add_argument("--noise_scale", type=float, default=1)
