@@ -103,7 +103,7 @@ if __name__ == "__main__":
     parser.add_argument("--replay_buffer_size", type=int, default=int(1e6))
     parser.add_argument("--debug", default=False)
     parser.add_argument("--use_ema_policy", default=True, action="store_true")
-    parser.add_argument("--sample_k", type=int, default=500)
+    parser.add_argument("--sample_k", type=int, default=300)
     parser.add_argument("--fix_alpha", type=str2bool, default=False)
     parser.add_argument("--alpha", type=float, default=0.01)
     parser.add_argument("--init_alpha", type=float, default=1)

@@ -197,10 +197,10 @@ class MeanFlow:
 
     def reverse_weighted_p_loss(self, weights: jax.Array, model: MeanFlowModel, r: jax.Array, t: jax.Array,
                                 x_start: jax.Array, noise: jax.Array, x_t: jax.Array):
-        u =  noise - x_start  # Shape: (B, K, D)
+        u =  noise - x_start  # Shape: (B, K, A)
         B, K, D = x_start.shape
         # Flatten inputs for the model
-        x_t_flat = jnp.repeat(jnp.expand_dims(x_t, axis=1), repeats=K, axis=1).reshape(B * K, D)
+        x_t_flat = jnp.repeat(jnp.expand_dims(x_t, axis=1), repeats=K, axis=1).reshape(B * K, D) # B*K-D
         # <<< FIX: Reshape r and t to be 1D vectors (B*K,) instead of 2D (B*K, 1)
         r_flat = jnp.repeat(jnp.expand_dims(r, axis=1), repeats=K, axis=1).reshape(B * K)
         t_flat = jnp.repeat(jnp.expand_dims(t, axis=1), repeats=K, axis=1).reshape(B * K)
@@ -235,9 +235,10 @@ class MeanFlow:
         # 目标 u_tgt 的计算仍然依赖于 K 个不同的噪声，所以这部分不变
         u_tgt = jax.lax.stop_gradient(u - (t - r)[:, None] * dudt)
         # u_tgt_estimation = jax.lax.stop_gradient(jnp.sum(weights[:, :, None] * u_tgt, axis=1))
-        u_tgt_estimation = jax.lax.stop_gradient(weights[:, :, None] * u_tgt)
+        u_tgt_estimation = jax.lax.stop_gradient(u_tgt)
+        weighted_error = weights[:, :, None] * optax.squared_error(u_pred, u_tgt_estimation)
 
-        loss = optax.squared_error(u_pred, u_tgt_estimation).mean()
+        loss = jnp.mean(weighted_error)
 
         return loss, jax.lax.stop_gradient(dudt), jax.lax.stop_gradient(u_pred_b_k_d),jax.lax.stop_gradient(dudt),jax.lax.stop_gradient(dudt_max_value)
 

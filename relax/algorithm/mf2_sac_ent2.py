@@ -1,4 +1,4 @@
-from typing import NamedTuple, Tuple
+from typing import NamedTuple, Tuple, Any
 
 import jax, jax.numpy as jnp
 import numpy as np
@@ -7,6 +7,8 @@ import haiku as hk
 import pickle
 import flax.linen as nn
 from functools import partial
+
+from jax import Array
 from jax.sharding import Mesh, PartitionSpec as P
 from jax.experimental.shard_map import shard_map
 
@@ -178,8 +180,19 @@ class MF2SACENT2(Algorithm):
 
             devices = jax.devices()
             compute_Q_DDP = partial(shard_map, mesh=Mesh(devices, ('i',)), in_specs=(P('i'), P('i')), out_specs=(P('i')))(get_min_q)
-            critic = compute_Q_DDP( observations_repeat, clean_samples)  # batch_size, K
+            critic = compute_Q_DDP( observations_repeat, clean_samples)  # batch_size, K   sample B-K-A
 
+            if self.fixed_alpha:
+                critic=critic/jnp.float32(agent.alpha_value)
+            else:
+                safe_alpha = jnp.maximum(jnp.exp(log_alpha), 0.001)
+                critic=critic/safe_alpha
+
+            q_mean, q_std = critic.mean(), critic.std()
+            Z=jax.nn.logsumexp(critic, axis=1, keepdims=True)  # B-1
+            q_weights = jnp.exp(critic - Z) # B-K
+
+            """
             if self.fixed_alpha:
                 weight = nn.softmax((1 / jnp.float32(self.alpha_value)) * critic, axis=1)
             else:
@@ -187,15 +200,16 @@ class MF2SACENT2(Algorithm):
                 weight = nn.softmax((1 / jnp.exp(safe_alpha)) * critic, axis=1)
 
             u_estimation = jnp.sum(weight[:,:,None] * (clean_samples-noise), axis=1)
-            obs_expanded = jnp.repeat(obs, self.K, axis=0)
+            """
+            obs_expanded = jnp.repeat(obs, self.K, axis=0) # B*K -S
 
 
 
-            def policy_loss_fn(policy_params) -> jax.Array:
+            def policy_loss_fn(policy_params) -> tuple[Any, tuple[Array, Any, Array]]:
                 def denoiser(x, r, t):
-                    return self.agent.policy(policy_params,obs_expanded, x, r, t)
+                    return self.agent.policy(policy_params,obs_expanded, x, r, t) # B*K -A
 
-                loss,dudt,u_out,dudt_out,dudt_max = self.agent.flow.reverse_weighted_p_loss(weight, denoiser, r, t,clean_samples,noise,
+                loss,dudt,u_out,dudt_out,dudt_max = self.agent.flow.reverse_weighted_p_loss(q_weights, denoiser, r, t,clean_samples,noise,
                                                                noisy_actions)
                 u_pred=jnp.mean(u_out)
                 dudt_pred=jnp.mean(dudt_out)
@@ -205,18 +219,16 @@ class MF2SACENT2(Algorithm):
                 q1_target = self.agent.q(target_q1_params, obs, acts)
                 q2_target = self.agent.q(target_q2_params, obs, acts)
                 q_target = jnp.minimum(q1_target, q2_target)
-                loss += jnp.mean(-q_target)
+                # loss += jnp.mean(-q_target)
 
-                return loss, (jnp.sum(weight[:,:,None]),
-                              u_estimation,
-                              jnp.mean(jnp.sum(weight[:,:,None])),
-                              jnp.std(jnp.sum(weight[:,:,None])),
+                return loss, (jnp.sum(q_weights),
+                              Z,
+                              jnp.mean(jnp.sum(q_weights)),
+                              jnp.std(jnp.sum(q_weights)),
                               dudt,u_pred,dudt_pred,dudt_max)
-                # return loss, (0, 0, 0, 0)
 
-            (total_loss, (q_weights, scaled_q, q_mean, q_std,dudt,u_pred,dudt_pred,dudt_max)), policy_grads = jax.value_and_grad(policy_loss_fn,
-                                                                                                  has_aux=True)(
-                policy_params)
+            (total_loss, (q_weights, Z, q_mean, q_std,dudt,u_pred,dudt_pred,dudt_max)), policy_grads = jax.value_and_grad(policy_loss_fn,
+                                                                                                  has_aux=True)(policy_params)
 
             # update alpha
             def log_alpha_loss_fn(log_alpha: jax.Array) -> jax.Array:
@@ -290,8 +302,8 @@ class MF2SACENT2(Algorithm):
                 "q_weights_mean": jnp.mean(q_weights),
                 "q_weights_min": jnp.min(q_weights),
                 "q_weights_max": jnp.max(q_weights),
-                "scale_q_mean": jnp.mean(scaled_q),
-                "scale_q_std": jnp.std(scaled_q),
+                "scale_q_mean": jnp.mean(Z),
+                "scale_q_std": jnp.std(Z),
                 "running_q_mean": new_running_mean,
                 "running_q_std": new_running_std,
                 # "entropy_approx": 0.5 * self.agent.act_dim * jnp.log(
