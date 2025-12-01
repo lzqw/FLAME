@@ -153,8 +153,8 @@ class MeanFlow:
         log_p = jnp.sum(jax.scipy.stats.norm.logpdf(x, loc=0.0, scale=1.0), axis=-1)
 
         # 4. Hutchinson 探测向量
-        epsilon = jax.random.normal(key_probe, shape)
-
+        # epsilon = jax.random.normal(key_probe, shape)
+        epsilon = jax.random.rademacher(key_probe, shape, dtype=jnp.float32)
         dt = 1.0 / self.num_timesteps
         t_seq = jnp.arange(self.num_timesteps)
 
