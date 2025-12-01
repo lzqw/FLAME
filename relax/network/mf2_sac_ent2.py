@@ -110,7 +110,7 @@ class MF2SACENT2Net:
 
         This implementation approximates the instantaneous velocity v(z_t, t) required by the
         ODE solver using the MeanFlow network's average velocity over the *previous*
-        small time step: v(z_t, t) ≈ u_theta(z_t, r = t - dt, t).
+        small time step: v(z_t, t) ≈ u_theta(z_t, r = t - dt, t) / dt.
         """
 
         # --- Modification 1: Define num_steps and dt ---
@@ -134,7 +134,16 @@ class MF2SACENT2Net:
             t_batch = jnp.full((x.shape[0],), t)
             r_batch = jnp.full((x.shape[0],), r_scalar)
 
-            return self.policy(policy_params, obs, x, r_batch, t_batch)
+            # The policy predicts displacement: x_t - x_r
+            displacement = self.policy(policy_params, obs, x, r_batch, t_batch)
+
+            # FIX: Convert displacement to velocity for the ODE solver
+            # v = dx / dt
+            # Using jnp.maximum to avoid division by zero (though t >= dt_val in loop)
+            current_dt = jnp.maximum(t - r_scalar, 1e-5)
+            velocity = displacement / current_dt
+
+            return velocity
 
         # Base distribution p_0 is a standard normal
         def log_p0(z):
@@ -150,13 +159,14 @@ class MF2SACENT2Net:
             # t is a scalar (float)
             f_t, _ = state
 
-            # Function for VJP: v_t(f_t) ≈ u(f_t, t-dt, t)
+            # Function for VJP: v_t(f_t) ≈ u(f_t, t-dt, t) / dt
             v_t_fn = lambda x: model_fn(t, x)
 
             # Calculate v_t for df_dt
             v_t = v_t_fn(f_t)
 
             # Calculate VJP to get Z^T * J
+            # J is d(velocity)/dx
             _, vjp_fn = jax.vjp(v_t_fn, f_t)
             vjp_z = vjp_fn(z)[0]
 
@@ -192,6 +202,7 @@ class MF2SACENT2Net:
         log_p1 = log_p0(f_0) - g_0
 
         return log_p1
+
     def get_action_ent(self, key: jax.Array, policy_params: hk.Params, obs: jax.Array) -> Tuple[jax.Array, jax.Array]:
         # Unpack params
         policy_params_only, log_alpha, q1_params, q2_params = policy_params
