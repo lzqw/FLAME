@@ -51,14 +51,14 @@ def str2bool(v):
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
-    parser.add_argument("--alg", type=str, default="rf2_sac_ent_v")
+    parser.add_argument("--alg", type=str, default="mf2_sac_ent_v")
     parser.add_argument("--env", type=str, default="dm_control_walker_walk-v0")
     parser.add_argument("--suffix", type=str, default="test_use_atp1")
     parser.add_argument("--num_vec_envs", type=int, default=3)
     parser.add_argument("--hidden_num", type=int, default=3)
     parser.add_argument("--hidden_dim", type=int, default=256)
-    parser.add_argument("--diffusion_steps", type=int, default=20)
-    parser.add_argument("--diffusion_steps_test", type=int, default=20)
+    parser.add_argument("--diffusion_steps", type=int, default=1)
+    parser.add_argument("--diffusion_steps_test", type=int, default=1)
     parser.add_argument("--diffusion_hidden_dim", type=int, default=256)
     parser.add_argument("--start_step", type=int, default=int(3e4)) # other envs 3e4
     parser.add_argument("--total_step", type=int, default=int(1e6)) #1e6
