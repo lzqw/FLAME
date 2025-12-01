@@ -312,7 +312,8 @@ class MF2SACENT2(Algorithm):
                 "entropy_approx": jnp.mean(next_entropy),
                 "u_pred": u_pred,
                 "dudt": dudt_pred,
-                "dudt_max": dudt_max
+                "dudt_max": dudt_max,
+                "ent_loss": jnp.mean(next_entropy)-self.agent.target_entropy
             }
             return state, info
 
