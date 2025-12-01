@@ -89,7 +89,7 @@ if __name__ == "__main__":
     parser.add_argument("--hidden_dim", type=int, default=256)
     parser.add_argument("--diffusion_steps", type=int, default=1)  #SET 1 FOT MF BASED ALGORITHM
     parser.add_argument("--diffusion_steps_test", type=int, default=1)
-    parser.add_argument("--num_ent_timesteps", type=int, default=3)
+    parser.add_argument("--num_ent_timesteps", type=int, default=2)
     # The same as diffusion steps for rf. For mf based algorithms, set 5 or 4
     parser.add_argument("--diffusion_hidden_dim", type=int, default=256)
     parser.add_argument("--start_step", type=int, default=int(3e4)) # other envs 3e4
@@ -108,7 +108,7 @@ if __name__ == "__main__":
     parser.add_argument("--sample_k", type=int, default=300)
     parser.add_argument("--fix_alpha", type=str2bool, default=False)
     parser.add_argument("--alpha", type=float, default=0.01)
-    parser.add_argument("--init_alpha", type=float, default=1)
+    parser.add_argument("--init_alpha", type=float, default=0.5)
     args = parser.parse_args()
 
     if args.debug:

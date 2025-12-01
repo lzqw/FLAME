@@ -356,7 +356,7 @@ class MF2SACENT2Net:
 
                 # [Trick] Clip Trace to prevent numerical explosion causing Alpha oscillation
                 # This trick is also used in flow.py p_sample_ent
-                step_trace = jnp.clip(step_trace, -100.0, 100.0)
+                step_trace = jnp.clip(step_trace, -10.0, 10.0)
 
                 # Update state: x_next = x - drift (evolve towards t=0)
                 z_next = z - drift
