@@ -204,123 +204,66 @@ class MF2SACENT2Net:
 
         return log_p1
 
-    def compute_log_likelihood_nw(self, key: jax.Array, policy_params: hk.Params, obs: jax.Array,
-                                  act: jax.Array) -> jax.Array:
-
-        # 1. 定义 dt_step (正数)
-        num_steps = self.num_ent_timesteps
-        dt_step = 1.0 / num_steps
-
-        # 2. 修改 model_fn: 将位移转换为速度
-        def velocity_fn(t, x):
-            # MeanFlow 的 drift 是定义在 [t, t+dt] (或类似区间) 的位移
-            # 这里我们需要将其转化为瞬时速度 v = displacement / dt
-            # 注意：如果 model 接受的输入是 (x, start_t, end_t)，需根据训练时的定义调整
-            # 假设 model 输出对应 dt_step 长度的位移：
-            r_scalar = t
-            t_scalar = t + dt_step
-
-            # 构造 batch
-            r_batch = jnp.full((x.shape[0],), r_scalar)
-            t_batch = jnp.full((x.shape[0],), t_scalar)
-
-            displacement = self.policy(policy_params, obs, x, r_batch, t_batch)
-
-            return displacement / dt_step
-
-        # 3. 定义 CNF 动力学 (Data -> Noise, t: 0 -> 1)
-        def ode_dynamics(state, t):
-            f_t, _ = state
-
-            # 定义当前时刻的速度函数
-            v_t_fn = lambda x: velocity_fn(t, x)
-
-            # 计算速度
-            v_t = v_t_fn(f_t)
-
-            # 计算 Jacobian 的迹 (Trace)
-            z_key, _ = jax.random.split(key)  # 注意：这里为了演示简化了 key 的处理，实际需在外部传入或正确 split
-            z = jax.random.normal(z_key, act.shape)
-            _, vjp_fn = jax.vjp(v_t_fn, f_t)
-            vjp_z = vjp_fn(z)[0]
-            trace_term = jnp.sum(vjp_z * z, axis=-1)
-
-            df_dt = v_t
-            dg_dt = -trace_term  # Log probability 变化率
-            return df_dt, dg_dt
-
-        def solver_step(state, t):
-            f_t, g_t = state
-            df_dt, dg_dt = ode_dynamics(state, t)
-
-            # 正向积分: t 增加，x 随速度变化
-            f_next = f_t + df_dt * dt_step
-            g_next = g_t + dg_dt * dt_step
-            return (f_next, g_next), None
-
-        # 4. 积分设置: 从 0.0 (Data) 到 1.0 (Noise)
-        timesteps = jnp.linspace(0.0, 1.0 - dt_step, num_steps)
-
-        # 初始状态: Data (act)
-        initial_state = (act, jnp.zeros(act.shape[:-1]))
-
-        final_state, _ = jax.lax.scan(solver_step, initial_state, timesteps)
-        f_1, g_1 = final_state
-
-        # Log p(data) = Log p(noise) - (- delta_logp) = Log p(noise) + delta_logp
-        # 通常 CNF 公式: log p(x0) = log p(x1) - \int div(v) dt
-        # 这里 log p(x_data) = log p(x_noise) + \int_{0}^{1} div(v) dt
-        # 代码中 g 累积的是 -trace，所以 g_1 = - \int trace
-        # log p(act) = log_p0(f_1) - g_1
-
-        def log_p0(z):
-            return jax.scipy.stats.norm.logpdf(z).sum(axis=-1)
-
-        log_p1 = log_p0(f_1) - g_1
-        return log_p1
-
     def get_action_ent(self, key: jax.Array, policy_params: hk.Params, obs: jax.Array) -> Tuple[jax.Array, jax.Array]:
-        # Unpack params
+        """
+        修复了维度不匹配 (2 vs 3) 错误的 get_action_ent 版本。
+        核心修复：为 acts 的取值显式扩展索引维度。
+        """
         policy_params_only, log_alpha, q1_params, q2_params = policy_params
 
-        # Define the model for sampling, which uses both r and t.
-        # For sampling, r is typically fixed to 0.
         def model_fn(x, r, t):
             return self.policy(policy_params_only, obs, x, r, t)
 
-        def sample(key: jax.Array) -> Union[jax.Array, jax.Array]:
-            act = self.flow.p_sample(key, model_fn, (*obs.shape[:-1], self.act_dim))
-            q1 = self.q(q1_params, obs, act)
-            q2 = self.q(q2_params, obs, act)
-            q = jnp.minimum(q1, q2)
-            return act.clip(-1, 1), q
+        key_sample, key_noise = jax.random.split(key)
 
-        # Split keys for sampling, noise, and entropy calculation
-        sample_key, noise_key, entropy_key = jax.random.split(key, 3)
-
-        # Sample action(s) from the policy
+        # 1. 采样
         if self.num_particles == 1:
-            act, _ = sample(sample_key)
+            act, log_prob = self.flow.p_sample_ent(key_sample, model_fn, (*obs.shape[:-1], self.act_dim))
         else:
-            keys = jax.random.split(sample_key, self.num_particles)
-            acts, qs = jax.vmap(sample)(keys)
+            # 多粒子情况
+            keys = jax.random.split(key_sample, self.num_particles)
+            vmap_sample = jax.vmap(lambda k: self.flow.p_sample_ent(k, model_fn, (*obs.shape[:-1], self.act_dim)))
+            acts, log_probs = vmap_sample(keys)
+
+            # acts: (K, B, D), log_probs: (K, B)
+
+            # 计算 Q 值
+            def evaluate_q(params, a):
+                return self.q(params, obs, a)
+
+            qs1 = jax.vmap(lambda a: evaluate_q(q1_params, a))(acts)
+            qs2 = jax.vmap(lambda a: evaluate_q(q2_params, a))(acts)
+            qs = jnp.minimum(qs1, qs2)
+
+            # [CRITICAL FIX 1]: 确保 qs 是 (K, B) 形状，方便 argmax
+            # 如果 QNet 返回 (B, 1)，vmap 后是 (K, B, 1)，需要 squeeze 掉最后一个维度
+            if qs.ndim == 3:
+                qs = qs.squeeze(-1)
+                # 现在 qs 形状保证是 (K, B)
+
+            # 计算最佳索引，形状为 (1, B)
             q_best_ind = jnp.argmax(qs, axis=0, keepdims=True)
-            act = jnp.take_along_axis(acts, q_best_ind[..., None], axis=0).squeeze(axis=0)
 
-        # Compute log probability of the original action (before adding exploration noise)
-        log_prob = self.compute_log_likelihood_nw(entropy_key, policy_params_only, obs, act)
+            # [CRITICAL FIX 2]: 针对 acts (3D) 扩展索引维度
+            # acts 是 (K, B, D)，我们需要索引形状为 (1, B, 1) 才能使用 take_along_axis
+            q_best_ind_3d = jnp.expand_dims(q_best_ind, axis=-1)
+            act = jnp.take_along_axis(acts, q_best_ind_3d, axis=0).squeeze(axis=0)  # 结果 (B, D)
 
-        # Entropy is the negative log probability
+            # [CRITICAL FIX 3]: 针对 log_probs (2D) 直接使用 2D 索引
+            # log_probs 是 (K, B)，索引 q_best_ind 是 (1, B)，维度匹配 (2 vs 2)
+            log_prob = jnp.take_along_axis(log_probs, q_best_ind, axis=0).squeeze(axis=0)  # 结果 (B,)
+
+        # 2. 计算 Entropy
         entropy = -log_prob
 
-        # Add exploration noise to the action that will be executed
-        # noisy_act = act + jax.random.normal(noise_key, act.shape) * jnp.exp(log_alpha) * self.noise_scale
+        # 3. 添加探索噪声
+        act = act.clip(-1, 1)
         if self.fixed_alpha:
-            noisy_act = act + jax.random.normal(noise_key, act.shape) * jnp.float32(0.1) * self.noise_scale
+            noisy_act = act + jax.random.normal(key_noise, act.shape) * jnp.float32(0.1) * self.noise_scale
         else:
-            noisy_act = act + jax.random.normal(noise_key, act.shape) * jnp.exp(log_alpha) * self.noise_scale
-        return noisy_act, entropy
+            noisy_act = act + jax.random.normal(key_noise, act.shape) * jnp.exp(log_alpha) * self.noise_scale
 
+        return noisy_act, entropy
 
 
 def create_mf2_sac_ent2_net(

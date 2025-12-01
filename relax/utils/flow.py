@@ -139,6 +139,47 @@ class MeanFlow:
     def q_sample(self, t: int, x_start: jax.Array, noise: jax.Array):
         return (1 - t) * x_start + t * noise
 
+    def p_sample_ent(self, key: jax.Array, model: MeanFlowModel, shape: Tuple[int, ...]) -> Tuple[jax.Array, jax.Array]:
+        """
+        采样动作并同时利用 Hutchinson 迹估计器计算其对数概率 (Entropy)。
+        """
+        key_z, key_probe = jax.random.split(key)
+
+        # 2. 初始状态采样 x ~ N(0, 0.5^2)
+        x = 0.5 * jax.random.normal(key_z, shape)
+
+        # 3. 计算初始分布的 Log Probability
+        # [CRITICAL FIX]: 使用 axis=-1 确保对每个样本独立求和，保留 Batch 维度
+        log_p = jnp.sum(jax.scipy.stats.norm.logpdf(x, loc=0.0, scale=0.5), axis=-1)
+
+        # 4. Hutchinson 探测向量
+        epsilon = jax.random.normal(key_probe, shape)
+
+        dt = 1.0 / self.num_timesteps
+        t_seq = jnp.arange(self.num_timesteps)
+
+        def body_fn(carry, t_idx):
+            x, current_log_p = carry
+            tau = (self.num_timesteps - t_idx) * dt
+            prev_tau = tau - dt
+
+            def drift_fn(x_in):
+                return model(x_in, prev_tau, tau)
+
+            drift, jvp_val = jax.jvp(drift_fn, (x,), (epsilon,))
+
+            # [CRITICAL FIX]: 只在特征维度求和 (axis=-1)，保留 (Batch,) 维度
+            div_drift = jnp.sum(epsilon * jvp_val, axis=-1)
+
+            x_next = x - drift
+            next_log_p = current_log_p + div_drift
+
+            return (x_next, next_log_p), None
+
+        (final_x, final_log_p), _ = jax.lax.scan(body_fn, (x, log_p), t_seq)
+
+        return final_x, final_log_p
+
     def weighted_p_loss(self, key: jax.Array, weights: jax.Array, model: MeanFlowModel, r: jax.Array, t: jax.Array,
                         x_start: jax.Array):
         if len(weights.shape) == 1:
