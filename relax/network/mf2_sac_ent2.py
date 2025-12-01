@@ -265,6 +265,65 @@ class MF2SACENT2Net:
 
         return noisy_act, entropy
 
+        # 在 MF2SACENT2Net 类中添加:
+
+    def get_action_entropy_singlestep(self, key: jax.Array, policy_params: hk.Params, obs: jax.Array,
+                                      num_probes: int = 1) -> Tuple[jax.Array, jax.Array]:
+        """
+        基于方法 A：单步离散映射的熵估计和动作采样。
+        执行 1-NFE 生成，并同时估计熵。
+        """
+        policy_params_only, log_alpha, q1_params, q2_params = policy_params
+        batch_size = obs.shape[0]
+
+        # 1. 基础熵常量
+        base_entropy = (self.act_dim / 2.0) * (1.0 + math.log(2 * math.pi))
+
+        def single_sample_fn(k, o):
+            key_z, key_eps = jax.random.split(k)
+
+            # 采样先验 Z1
+            z1 = jax.random.normal(key_z, shape=(self.act_dim,))
+
+            # 定义流场 u(z, 0, 1)
+            def flow_map(z):
+                # r=0, t=1
+                return self.policy(policy_params_only, o, z, 0.0, 1.0)
+
+            # 计算动作: Z0 = Z1 - u(Z1)
+            # 这里的 1.0 是 (t-r) = 1-0
+            u_val, jvp_val = jax.jvp(flow_map, (z1,), (jax.random.normal(key_eps, shape=(self.act_dim,)),))
+
+            # 动作生成 (1-NFE)
+            act = z1 - u_val
+
+            # 熵估计 (Hutchinson)
+            # 使用刚才 JVP 计算中的 epsilon 和 output
+            # 注意：上面的 jvp 调用只做了一次探测。如果需要更精准，需要多次探测。
+            # 为了效率，这里复用一次探测的结果（虽然有偏差，但在RL训练中通常够用）
+            # 如果需要严格的 num_probes，需要重新跑循环
+
+            # 下面是更严谨的实现：
+            epsilon = jax.random.normal(key_eps, shape=(self.act_dim,))
+            _, tangent = jax.jvp(flow_map, (z1,), (epsilon,))
+            trace = jnp.dot(epsilon, tangent)
+
+            entropy = base_entropy - trace
+
+            return act.clip(-1, 1), entropy
+
+        keys = jax.random.split(key, batch_size)
+        acts, entropies = jax.vmap(single_sample_fn)(keys, obs)
+
+        # 添加探索噪声 (如果是训练阶段)
+        noise_key = jax.random.split(key)[0]  # 简单处理
+        if self.fixed_alpha:
+            acts = acts + jax.random.normal(noise_key, acts.shape) * jnp.float32(0.1) * self.noise_scale
+        else:
+            acts = acts + jax.random.normal(noise_key, acts.shape) * jnp.exp(log_alpha) * self.noise_scale
+
+        return acts, entropies
+
 
 def create_mf2_sac_ent2_net(
     key: jax.Array,

@@ -114,10 +114,12 @@ class MF2SACENT2(Algorithm):
             # next_action = self.agent.get_action(next_eval_key, (policy_params, log_alpha, q1_params, q2_params),
             #                                     next_obs)
             # Get next action and its entropy from the policy
-            next_action, next_entropy = self.agent.get_action_ent(next_eval_key,
+            # next_action, next_entropy = self.agent.get_action_ent(next_eval_key,
+            #                                                       (policy_params, log_alpha, q1_params, q2_params),
+            #                                                       next_obs)
+            next_action, next_entropy=self.agent.get_action_entropy_singlestep(next_eval_key,
                                                                   (policy_params, log_alpha, q1_params, q2_params),
                                                                   next_obs)
-
             q1_target = self.agent.q(target_q1_params, next_obs, next_action)
             q2_target = self.agent.q(target_q2_params, next_obs, next_action)
             #TODO: positive or negative
