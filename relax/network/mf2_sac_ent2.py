@@ -174,7 +174,7 @@ class MF2SACENT2Net:
             # t is the current time (scalar) from timesteps
             df_dt, dg_dt = ode_dynamics(state, t)
 
-            f_next = f_t - df_dt * dt_solver  # negative or posiiitive
+            f_next = f_t + df_dt * dt_solver  # negative or posiiitive
             g_next = g_t + dg_dt * dt_solver
             return (f_next, g_next), None
 
@@ -224,7 +224,7 @@ class MF2SACENT2Net:
         log_prob = self.compute_log_likelihood(entropy_key, policy_params_only, obs, act)
 
         # Entropy is the negative log probability
-        entropy = log_prob
+        entropy = -log_prob
 
         # Add exploration noise to the action that will be executed
         # noisy_act = act + jax.random.normal(noise_key, act.shape) * jnp.exp(log_alpha) * self.noise_scale
