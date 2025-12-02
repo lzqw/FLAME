@@ -27,8 +27,8 @@ class MF2SACENTNet_V:
     policy: Callable[[hk.Params, jax.Array, jax.Array, jax.Array], jax.Array]
     encoder: Callable[[hk.Params, jax.Array], jax.Array]
     num_timesteps: int
-    num_ent_timesteps: int
     num_timesteps_test: int
+    num_ent_timesteps: int
     act_dim: int
     num_particles: int
     target_entropy: float
@@ -239,6 +239,94 @@ class MF2SACENTNet_V:
         log_p1 = log_p0(f_0) - g_0
 
         return log_p1
+
+    def get_action_entropy_multistep(self, key: jax.Array, policy_params: hk.Params, obs: jax.Array,
+                                     ) -> Tuple[jax.Array, jax.Array]:
+        """
+        Entropy estimation and action sampling based on Multi-step Flow Matching.
+        Mitigates the truncation error of single-step Jacobian linearization by splitting the [0, 1] interval into num_steps segments.
+
+        Args:
+            num_steps: Number of steps. 2 or 4 is recommended. More steps yield more accurate estimation and a lower reachable entropy lower bound.
+        """
+        num_steps=self.num_ent_timesteps
+        policy_params, log_alpha, q1_params, q2_params, encoder_params = policy_params
+        batch_size = obs.shape[0]
+
+        # 1. Base entropy constant H(Prior)
+        base_entropy = (self.act_dim / 2.0) * (1.0 + math.log(2 * math.pi))
+
+        # Define single sample processing function (to be vmapped)
+        def single_sample_fn(k, o):
+            key_z, key_eps = jax.random.split(k)
+
+            # Initial state Z1 (Noise, t=1)
+            z_current = jax.random.normal(key_z, shape=(self.act_dim,))
+
+            # Hutchinson probe vector (reusing the same epsilon across the trajectory is common to save computation)
+            epsilon = jax.random.normal(key_eps, shape=(self.act_dim,))
+
+            # Define time step interval dt
+            dt = 1.0 / num_steps
+
+            # Scan function: integrate from t=1 to t=0
+            def scan_body(carry, step_idx):
+                z, trace_accum = carry
+
+                # Current time segment: from t_start down to t_end
+                # E.g., 2 steps: [1.0 -> 0.5], [0.5 -> 0.0]
+                t_start = 1.0 - step_idx * dt
+                t_end = 1.0 - (step_idx + 1) * dt
+
+                # Define the flow function for this small step
+                def step_flow_map(x_in):
+                    # MeanFlow model predicts displacement: u(x, r, t)
+                    # Following flow.py convention, input is (x, small_time, large_time)
+                    # We want to predict displacement from t_start to t_end, i.e., x_start - x_end
+                    return self.policy(policy_params, o, x_in, t_end, t_start)
+
+                # Compute displacement (drift) and JVP
+                drift, tangent = jax.jvp(step_flow_map, (z,), (epsilon,))
+
+                # Compute divergence contribution for current step: epsilon^T * J * epsilon
+                step_trace = jnp.dot(epsilon, tangent)
+
+                # [Trick] Clip Trace to prevent numerical explosion causing Alpha oscillation
+                # This trick is also used in flow.py p_sample_ent
+                step_trace = jnp.clip(step_trace, -10.0, 10.0)
+
+                # Update state: x_next = x - drift (evolve towards t=0)
+                z_next = z - drift
+                trace_next = trace_accum + step_trace
+
+                return (z_next, trace_next), None
+
+            # Execute multi-step loop
+            # carry initialization: (z_init, 0.0)
+            (z_final, total_trace), _ = jax.lax.scan(scan_body, (z_current, 0.0), jnp.arange(num_steps))
+
+            # Final action
+            act = z_final
+
+            # Entropy calculation: H(Data) = H(Noise) - Sum(Trace)
+            entropy = base_entropy - total_trace
+
+            # If you previously commented out base_entropy, you can revert to: entropy = -total_trace
+            # But to reach Target (e.g., -6), you need base_entropy (approx +8) to offset
+            return act.clip(-1, 1), entropy
+
+        keys = jax.random.split(key, batch_size)
+        acts, entropies = jax.vmap(single_sample_fn)(keys, obs)
+
+        # Add exploration noise (training phase)
+        noise_key = jax.random.split(key)[0]
+        if self.fixed_alpha:
+            acts = acts + jax.random.normal(noise_key, acts.shape) * jnp.float32(0.1) * self.noise_scale
+        else:
+            # Note: log_alpha here is automatically adjusted by SAC; with more accurate entropy estimation, it should work properly now
+            acts = acts + jax.random.normal(noise_key, acts.shape) * jnp.exp(log_alpha) * self.noise_scale
+
+        return acts, entropies
 
 
 def create_mf2_sac_ent_net_visual(

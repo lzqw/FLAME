@@ -26,8 +26,8 @@ class MF2SACENT2Net:
     q: Callable[[hk.Params, jax.Array, jax.Array], jax.Array]
     policy: Callable[[hk.Params, jax.Array, jax.Array, jax.Array], jax.Array]
     num_timesteps: int
-    num_ent_timesteps: int
     num_timesteps_test: int
+    num_ent_timesteps: int
     act_dim: int
     num_particles: int
     target_entropy: float

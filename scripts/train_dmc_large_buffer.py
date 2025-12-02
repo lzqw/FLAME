@@ -60,6 +60,7 @@ if __name__ == "__main__":
     parser.add_argument("--diffusion_steps", type=int, default=1)
     parser.add_argument("--diffusion_steps_test", type=int, default=1)
     parser.add_argument("--diffusion_hidden_dim", type=int, default=256)
+    parser.add_argument("--num_ent_timesteps", type=int, default=2)
     parser.add_argument("--start_step", type=int, default=int(3e4)) # other envs 3e4
     parser.add_argument("--total_step", type=int, default=int(1e6)) #1e6
     parser.add_argument("--lr", type=float, default=3e-4)
@@ -211,6 +212,7 @@ if __name__ == "__main__":
             return x * jnp.tanh(jax.nn.softplus(x))
         agent, params = create_mf2_sac_ent_net_visual(init_network_key, obs_dim, latent_obs_dim, act_dim, hidden_sizes, diffusion_hidden_sizes, mish,
                                           num_timesteps=args.diffusion_steps,
+                                          num_ent_timesteps=args.num_ent_timesteps,
                                           num_timesteps_test=args.diffusion_steps_test,
                                           num_particles=args.num_particles,
                                           noise_scale=args.noise_scale,
