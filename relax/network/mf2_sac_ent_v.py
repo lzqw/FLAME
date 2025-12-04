@@ -284,7 +284,7 @@ class MF2SACENTNet_V:
                     # MeanFlow model predicts displacement: u(x, r, t)
                     # Following flow.py convention, input is (x, small_time, large_time)
                     # We want to predict displacement from t_start to t_end, i.e., x_start - x_end
-                    return self.policy(policy_params_only, o, x_in, t_end, t_start)
+                    return self.policy(policy_params, o, x_in, t_end, t_start)
 
                 # Compute displacement (drift) and JVP
                 drift, tangent = jax.jvp(step_flow_map, (z,), (epsilon,))
