@@ -205,103 +205,227 @@ class MF2SACENT2Net:
         return log_p1
 
     def get_action_ent(self, key: jax.Array, policy_params: hk.Params, obs: jax.Array) -> Tuple[jax.Array, jax.Array]:
-        """
-        修复了维度不匹配 (2 vs 3) 错误的 get_action_ent 版本。
-        核心修复：为 acts 的取值显式扩展索引维度。
-        """
+        # Unpack params
         policy_params_only, log_alpha, q1_params, q2_params = policy_params
 
+        # Define the model for sampling, which uses both r and t.
+        # For sampling, r is typically fixed to 0.
         def model_fn(x, r, t):
             return self.policy(policy_params_only, obs, x, r, t)
 
-        key_sample, key_noise = jax.random.split(key)
+        def sample(key: jax.Array) -> Union[jax.Array, jax.Array]:
+            act = self.flow.p_sample(key, model_fn, (*obs.shape[:-1], self.act_dim))
+            q1 = self.q(q1_params, obs, act)
+            q2 = self.q(q2_params, obs, act)
+            q = jnp.minimum(q1, q2)
+            return act.clip(-1, 1), q
 
-        # 1. 采样
+        # Split keys for sampling, noise, and entropy calculation
+        sample_key, noise_key, entropy_key = jax.random.split(key, 3)
+
+        # Sample action(s) from the policy
         if self.num_particles == 1:
-            act, log_prob = self.flow.p_sample_ent(key_sample, model_fn, (*obs.shape[:-1], self.act_dim))
+            act, _ = sample(sample_key)
         else:
-            # 多粒子情况
-            keys = jax.random.split(key_sample, self.num_particles)
-            vmap_sample = jax.vmap(lambda k: self.flow.p_sample_ent(k, model_fn, (*obs.shape[:-1], self.act_dim)))
-            acts, log_probs = vmap_sample(keys)
-
-            # acts: (K, B, D), log_probs: (K, B)
-
-            # 计算 Q 值
-            def evaluate_q(params, a):
-                return self.q(params, obs, a)
-
-            qs1 = jax.vmap(lambda a: evaluate_q(q1_params, a))(acts)
-            qs2 = jax.vmap(lambda a: evaluate_q(q2_params, a))(acts)
-            qs = jnp.minimum(qs1, qs2)
-
-            # [CRITICAL FIX 1]: 确保 qs 是 (K, B) 形状，方便 argmax
-            # 如果 QNet 返回 (B, 1)，vmap 后是 (K, B, 1)，需要 squeeze 掉最后一个维度
-            if qs.ndim == 3:
-                qs = qs.squeeze(-1)
-                # 现在 qs 形状保证是 (K, B)
-
-            # 计算最佳索引，形状为 (1, B)
+            keys = jax.random.split(sample_key, self.num_particles)
+            acts, qs = jax.vmap(sample)(keys)
             q_best_ind = jnp.argmax(qs, axis=0, keepdims=True)
+            act = jnp.take_along_axis(acts, q_best_ind[..., None], axis=0).squeeze(axis=0)
 
-            # [CRITICAL FIX 2]: 针对 acts (3D) 扩展索引维度
-            # acts 是 (K, B, D)，我们需要索引形状为 (1, B, 1) 才能使用 take_along_axis
-            q_best_ind_3d = jnp.expand_dims(q_best_ind, axis=-1)
-            act = jnp.take_along_axis(acts, q_best_ind_3d, axis=0).squeeze(axis=0)  # 结果 (B, D)
+        # Compute log probability of the original action (before adding exploration noise)
+        #log_prob = self.compute_log_likelihood3(entropy_key, policy_params_only, obs, act)
 
-            # [CRITICAL FIX 3]: 针对 log_probs (2D) 直接使用 2D 索引
-            # log_probs 是 (K, B)，索引 q_best_ind 是 (1, B)，维度匹配 (2 vs 2)
-            log_prob = jnp.take_along_axis(log_probs, q_best_ind, axis=0).squeeze(axis=0)  # 结果 (B,)
+        # Entropy is the negative log probability
+        #entropy = -log_prob
 
-        # 2. 计算 Entropy
-        entropy = -log_prob
-
-        # 3. 添加探索噪声
-        act = act.clip(-1, 1)
+        # Add exploration noise to the action that will be executed
+        # noisy_act = act + jax.random.normal(noise_key, act.shape) * jnp.exp(log_alpha) * self.noise_scale
         if self.fixed_alpha:
-            noisy_act = act + jax.random.normal(key_noise, act.shape) * jnp.float32(0.1) * self.noise_scale
+            noisy_act = act + jax.random.normal(noise_key, act.shape) * jnp.float32(0.1) * self.noise_scale
         else:
-            noisy_act = act + jax.random.normal(key_noise, act.shape) * jnp.exp(log_alpha) * self.noise_scale
+            noisy_act = act + jax.random.normal(noise_key, act.shape) * jnp.exp(log_alpha) * self.noise_scale
+        return noisy_act#, entropy
 
-        return noisy_act, entropy
+    def compute_log_likelihood2(self, key: jax.Array, policy_params: hk.Params, obs: jax.Array,
+                               act: jax.Array) -> jax.Array:
+        """
+        Computes the log-likelihood log p(a|s) using the ODE probability flow
+        and Hutchinson's trace estimator.
+        Integration path: t=1 (Data/Action) -> t=0 (Noise).
+        """
 
-        # 在 MF2SACENT2Net 类中添加:
+        # 1. 准备参数和常量
+        # 注意：这里 policy_params 已经被外部解包过了，还是完整的 Tuple 取决于调用的位置
+        # 根据 get_action_ent 的上下文，这里传入的是 policy_params_only
 
-    def get_action_entropy_singlestep(self, key: jax.Array, policy_params: hk.Params, obs: jax.Array,
-                                      num_probes: int = 1) -> Tuple[jax.Array, jax.Array]:
-        policy_params_only, log_alpha, q1_params, q2_params = policy_params
-        batch_size = obs.shape[0]
+        # 基础分布 p_0 是标准正态分布: log p_0(x)
+        def log_p0(x):
+            return jax.scipy.stats.norm.logpdf(x).sum(axis=-1)
 
-        base_entropy = (self.act_dim / 2.0) * (1.0 + math.log(2 * math.pi))
+        batch_size = act.shape[0]
+        act_dim = act.shape[-1]
 
-        def single_sample_fn(k, o):
-            key_z, key_eps = jax.random.split(k)
+        # 使用配置中的步数，或者为了精度可以使用更多步数 (e.g. 20-50)
+        num_steps = 4
+        dt = 1.0 / num_steps
 
-            z1 = jax.random.normal(key_z, shape=(self.act_dim,))
+        # 2. 为 Hutchinson Trace Estimator 生成随机噪声 epsilon
+        # 形状为 (Batch, Dim)，整个轨迹复用同一个 epsilon (这也是常见做法，节省计算且方差可控)
+        epsilon_key, _ = jax.random.split(key)
+        epsilon = jax.random.normal(epsilon_key, shape=act.shape)
 
-            def flow_map(z):
-                return self.policy(policy_params_only, o, z, 0.0, 1.0)
+        # 3. 定义 ODE 的单步积分逻辑 (Solver Step)
+        # 我们从 t=1 积分到 t=0，所以是逆向时间
 
-            epsilon = jax.random.normal(key_eps, shape=(self.act_dim,))
-            u, tangent = jax.jvp(flow_map, (z1,), (epsilon,))
-            trace = jnp.dot(epsilon, tangent)
-            act=z1-u
+        def scan_body(carry, step_idx):
+            x_t, delta_logp_accum = carry
 
-            entropy = base_entropy - trace
+            # 当前时间 t (从 1.0 递减到 0.0)
+            t_current = 1.0 - step_idx * dt
+            # 下一步时间 (t - dt)
+            t_next = 1.0 - (step_idx + 1) * dt
 
-            return act, entropy
+            # [Safety] 避免 t=0 或 t=1 的边界数值问题
+            t_current_safe = jnp.clip(t_current, 1e-5, 1.0 - 1e-5)
 
-        keys = jax.random.split(key, batch_size)
-        acts, entropies = jax.vmap(single_sample_fn)(keys, obs)
+            # 定义计算速度场(Velocity/Drift)的函数，用于 JVP
+            # 注意：Flow Matching 中，policy 输出的是 vector field u_t(x)
+            def vector_field_fn(x_in):
+                # 这里的传参取决于你的 Policy 定义。
+                # 通常 Flow Matching 的 u(x, t) 只依赖当前 t。
+                # 如果你的 policy 需要 (x, r, t)，通常 r=0 或 r=t-dt。
+                # 鉴于标准 Flow Matching，我们假设它是瞬时速度场。
+                # 我们传入 t_current_safe 作为时间条件。
+                return self.policy(policy_params, obs, x_in, t_current_safe, t_current_safe)
 
-        # 添加探索噪声 (如果是训练阶段)
-        noise_key = jax.random.split(key)[0]  # 简单处理
-        if self.fixed_alpha:
-            acts = acts + jax.random.normal(noise_key, acts.shape) * jnp.float32(0.1) * self.noise_scale
-        else:
-            acts = acts + jax.random.normal(noise_key, acts.shape) * jnp.exp(log_alpha) * self.noise_scale
+            # --- 核心计算：值与散度 ---
 
-        return acts.clip(-1,1), entropies
+            # 使用 jax.jvp 同时计算 速度(drift) 和 雅可比向量积(tangent = J * epsilon)
+            # drift = v(x, t)
+            # tangent = \nabla v \cdot epsilon
+            drift, tangent = jax.jvp(vector_field_fn, (x_t,), (epsilon,))
+
+            # Hutchinson Trace: Tr(J) ≈ epsilon^T * (J * epsilon)
+            trace = jnp.sum(epsilon * tangent, axis=-1)
+
+            # --- 数值稳定性保护 (关键) ---
+
+            # 1. 处理 NaN/Inf: 如果网络输出炸了，强制归零，防止崩溃
+            drift = jnp.nan_to_num(drift, nan=0.0, posinf=1.0, neginf=-1.0)
+            trace = jnp.nan_to_num(trace, nan=0.0, posinf=10.0, neginf=-10.0)
+
+            # 2. 裁剪 Trace: 防止 log_prob 极速发散
+            trace = jnp.clip(trace, -100.0, 100.0)
+
+            # --- Euler 积分更新 ---
+            # ODE: dx/dt = v(x,t)
+            # 我们向后积分 (backward integration): dt 是负的 (-1/num_steps)
+            # x_{t-dt} = x_t + v(x_t) * (-dt) = x_t - drift * dt
+            x_prev = x_t - drift * dt
+
+            # Log Density Change Formula:
+            # d(log p)/dt = -Tr(J)
+            # log p_{t-dt} - log p_t = -Tr(J) * (-dt) = Tr(J) * dt
+            # 所以我们要积累的变化量是 trace * dt
+            delta_logp_new = delta_logp_accum + trace * dt
+
+            # [Safety] 限制 x 的范围，防止推理过程中数值爆炸
+            x_prev = jnp.clip(x_prev, -10.0, 10.0)
+
+            return (x_prev, delta_logp_new), None
+
+        # 4. 执行 Scan 循环
+        # 初始状态: (数据样本 act, 累积的 log_det 变化量 0.0)
+        init_state = (act, jnp.zeros((batch_size,)))
+
+        (x_0, total_delta_logp), _ = jax.lax.scan(scan_body, init_state, jnp.arange(num_steps))
+
+        # 5. 计算最终 Log Likelihood
+        # 公式: log p_1(x) = log p_0(x_0) + \int_0^1 Tr(J) dt
+        # 我们在 scan 中累积的是 \int Tr(J) dt
+        # 注意正负号：我们是从 t=1 -> 0 积分。
+        # 按照标准推导：
+        # log p(x_1) = log p(x_0) - \int_{0}^{1} div(v) dt
+        # 这里的 total_delta_logp 计算的是 \int_{1}^{0} -div(v) (-dt) = \int_{0}^{1} -div(v) dt (如果是准确反向)
+        # 简单来说：log_p_data = log_p_noise + sum(trace * dt)
+
+        log_prob = log_p0(x_0) + total_delta_logp
+
+        # 最后的数值保护
+        log_prob = jnp.nan_to_num(log_prob, nan=-10.0, neginf=-100.0, posinf=100.0)
+
+        return log_prob
+
+    def compute_log_likelihood3(self, key: jax.Array, policy_params: hk.Params, obs: jax.Array,
+                                act: jax.Array) -> jax.Array:
+        """
+        Estimates the log-likelihood of the given action using Inverse Multi-step Flow Matching.
+        Integrates from Data (t=0) to Noise (t=1) to compute log p(a).
+
+        Args:
+            key: PRNG key for Hutchinson trace estimator.
+            policy_params: Policy network parameters.
+            obs: Observation.
+            act: Action to evaluate.
+        """
+        # 1. Setup constants
+        num_steps = 2
+        batch_size = act.shape[0]
+        dt = 1.0 / num_steps
+
+        # 2. Hutchinson Probe Vector
+        epsilon = jax.random.normal(key, shape=act.shape)
+
+        # 3. Define the inverse step function (Data t=0 -> Noise t=1)
+        def scan_body(carry, step_idx):
+            z, trace_accum = carry
+
+            # Current time window: moving from t_start to t_end (increasing t)
+            t_start = step_idx * dt
+            t_end = (step_idx + 1) * dt
+
+            # Define flow map for this step: u(z, t_start, t_end)
+            # Note: For reverse flow, we ask the model to predict the displacement
+            # that moves us from t_current towards t=1.
+            def step_flow_map(x_in):
+                return self.policy(policy_params, obs, x_in, t_start, t_end)
+
+            # Compute displacement (u) and Jacobian-Vector Product (J * epsilon)
+            drift, tangent = jax.jvp(step_flow_map, (z,), (epsilon,))
+
+            # Estimate Trace: epsilon^T * J * epsilon
+            step_trace = jnp.sum(epsilon * tangent, axis=-1)
+
+            # [Trick] Clip trace for numerical stability
+            step_trace = jnp.clip(step_trace, -10.0, 10.0)
+
+            # Update state: z_{t+1} = z_t + u * dt
+            # In MeanFlow formulation, the network outputs the displacement (x1 - x0) or similar.
+            # Here we add the drift to move towards noise.
+            z_next = z + drift
+
+            # Accumulate Log Det Jacobian (Trace)
+            # log p(z_next) approx log p(z) - Trace, but we want log p(x).
+            # Using Change of Variables: log p(x) = log p(z) + log |det dz/dx|
+            # Here trace represents log |det|. So we accumulate it.
+            trace_next = trace_accum + step_trace
+
+            return (z_next, trace_next), None
+
+        # 4. Run the inverse ODE solver
+        # Start with act (Data) at t=0, accumulate trace starting from 0.0
+        (z_final, total_trace), _ = jax.lax.scan(scan_body, (act, jnp.zeros((batch_size,))), jnp.arange(num_steps))
+
+        # 5. Calculate Log Probability
+        # log p(act) = log p_prior(z_final) + log |det(d z_final / d act)|
+        # log |det| is approximated by total_trace
+
+        # log p_prior(z) where z ~ N(0, I)
+        log_p_prior = jnp.sum(jax.scipy.stats.norm.logpdf(z_final), axis=-1)
+
+        log_prob = log_p_prior + total_trace
+
+        return log_prob
 
     def get_action_entropy_multistep(self, key: jax.Array, policy_params: hk.Params, obs: jax.Array,
                                      ) -> Tuple[jax.Array, jax.Array]:
@@ -312,7 +436,7 @@ class MF2SACENT2Net:
         Args:
             num_steps: Number of steps. 2 or 4 is recommended. More steps yield more accurate estimation and a lower reachable entropy lower bound.
         """
-        num_steps=self.num_ent_timesteps
+        num_steps=3
         policy_params_only, log_alpha, q1_params, q2_params = policy_params
         batch_size = obs.shape[0]
 
@@ -391,7 +515,6 @@ class MF2SACENT2Net:
 
         return acts, entropies
 
-
 def create_mf2_sac_ent2_net(
     key: jax.Array,
     obs_dim: int,
@@ -400,7 +523,6 @@ def create_mf2_sac_ent2_net(
     diffusion_hidden_sizes: Sequence[int],
     activation: Activation = jax.nn.relu,
     num_timesteps: int = 20,
-    num_ent_timesteps: int =20,
     num_timesteps_test: int = 20,
     num_particles: int = 32,
     noise_scale: float = 0.05,
@@ -430,8 +552,7 @@ def create_mf2_sac_ent2_net(
     sample_act = jnp.zeros((1, act_dim))
     params = init(key, sample_obs, sample_act)
 
-    net = MF2SACENT2Net(q=q.apply, policy=policy.apply, num_timesteps=num_timesteps, num_ent_timesteps=num_ent_timesteps,
-                num_timesteps_test=num_timesteps_test,
+    net = MF2SACENT2Net(q=q.apply, policy=policy.apply, num_timesteps=num_timesteps, num_timesteps_test=num_timesteps_test,
                  act_dim=act_dim,
                  target_entropy=-act_dim * target_entropy_scale, num_particles=num_particles, noise_scale=noise_scale,
                  noise_schedule='linear', alpha_value = alpha_value,fixed_alpha=fixed_alpha
