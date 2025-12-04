@@ -149,20 +149,19 @@ class MF2SACENT_V(Algorithm):
                 q = jnp.minimum(q1, q2)
                 return q
 
-            # next_action = self.agent.get_action(next_eval_key, (policy_params, log_alpha, q1_params, q2_params, encoder_params), next_obs)
-            # next_action, next_entropy = self.agent.get_action_ent(next_eval_key,
-            #                                                       (policy_params, log_alpha, q1_params, q2_params, encoder_params),
-            #                                                       next_obs)
-            next_action, next_entropy=self.agent.get_action_entropy_multistep(next_eval_key,
+            next_action = self.agent.get_action(next_eval_key, (policy_params, log_alpha, q1_params, q2_params, encoder_params), next_obs)
+
+            _, next_entropy=self.agent.get_action_entropy_multistep(next_eval_key,
                                                                   (policy_params, log_alpha, q1_params, q2_params,encoder_params),
                                                                   next_obs)
+
             q1_target = self.agent.q(target_q1_params, next_obs, next_action)
             q2_target = self.agent.q(target_q2_params, next_obs, next_action)
 
             if self.fixed_alpha:
-                q_target = jnp.minimum(q1_target, q2_target)  + jnp.float32(self.alpha_value) * next_entropy
+                q_target = jnp.minimum(q1_target, q2_target)  - jnp.float32(self.alpha_value) * next_entropy
             else:
-                q_target = jnp.minimum(q1_target, q2_target) + jnp.exp(log_alpha) * next_entropy
+                q_target = jnp.minimum(q1_target, q2_target) - jnp.exp(log_alpha) * next_entropy
             # q_target = jnp.minimum(q1_target, q2_target)  # - jnp.exp(log_alpha) * next_logp
             q_backup = reward + discount * q_target
 
