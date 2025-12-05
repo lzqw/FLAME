@@ -184,7 +184,7 @@ class MF2SACENT2(Algorithm):
             if self.fixed_alpha:
                 weight = nn.softmax((1 / jnp.float32(self.alpha_value)) * critic, axis=1)
             else:
-                safe_alpha = jnp.maximum(jnp.exp(log_alpha), 0.001)
+                safe_alpha = jnp.maximum(jnp.exp(log_alpha), 0.00001)
                 weight = nn.softmax((1 / jnp.exp(safe_alpha)) * critic, axis=1)
 
             u_estimation = jnp.sum(weight[:,:,None] * (clean_samples-noise), axis=1)
