@@ -252,6 +252,7 @@ class MF2SACENTNet_V:
         num_steps=self.num_ent_timesteps
         policy_params, log_alpha, q1_params, q2_params, encoder_params = policy_params
         batch_size = obs.shape[0]
+        # batch_size = obs.shape[0]
 
         # 1. Base entropy constant H(Prior)
         base_entropy = (self.act_dim / 2.0) * (1.0 + math.log(2 * math.pi))
@@ -327,6 +328,7 @@ class MF2SACENTNet_V:
             acts = acts + jax.random.normal(noise_key, acts.shape) * jnp.exp(log_alpha) * self.noise_scale
 
         return acts, entropies
+
 
 
 def create_mf2_sac_ent_net_visual(

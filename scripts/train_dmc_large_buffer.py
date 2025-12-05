@@ -79,7 +79,7 @@ if __name__ == "__main__":
     parser.add_argument("--n_step", type=int, default=1)
     parser.add_argument("--reward_scale", type=float, default=1.0)
     parser.add_argument("--sample_per_iteration", type=int, default=1)
-    parser.add_argument("--sample_k", type=int, default=5)
+    parser.add_argument("--sample_k", type=int, default=1)
     parser.add_argument("--update_per_iteration", type=int, default=1)
     parser.add_argument("--fix_alpha", type=str2bool, default=False)
     parser.add_argument("--alpha", type=float, default=0.01)
