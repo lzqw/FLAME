@@ -32,19 +32,19 @@ class Diffv2TrainState(NamedTuple):
     running_mean: float
     running_std: float
 
+
 @jax.jit
 def augment_batch(obs: jnp.ndarray,
                   next_obs: jnp.ndarray,
                   obs_key: jax.Array,
                   next_obs_key: jax.Array,
                   padding: int = 4
-                 ) -> Tuple[jnp.ndarray, jnp.ndarray]:
-
+                  ) -> Tuple[jnp.ndarray, jnp.ndarray]:
     def random_crop(key, img, padding):
-        crop_from = jax.random.randint(key, (2, ), 0, 2 * padding + 1)
-        crop_from = jnp.concatenate([crop_from, jnp.zeros((1, ), dtype=jnp.int32)])
+        crop_from = jax.random.randint(key, (2,), 0, 2 * padding + 1)
+        crop_from = jnp.concatenate([crop_from, jnp.zeros((1,), dtype=jnp.int32)])
         padded_img = jnp.pad(img, ((padding, padding), (padding, padding), (0, 0)),
-                            mode='edge')
+                             mode='edge')
         return jax.lax.dynamic_slice(padded_img, crop_from, img.shape)
 
     obs_keys = jax.random.split(obs_key, obs.shape[0])
@@ -59,7 +59,9 @@ def augment_batch(obs: jnp.ndarray,
     next_obs = jax.vmap(random_crop, (0, 0, None))(next_obs_keys, next_obs, padding)
     next_obs = next_obs.transpose((0, 3, 1, 2))
 
-    return jnp.squeeze(jnp.reshape(obs, (obs.shape[0], -1))), jnp.squeeze(jnp.reshape(next_obs, (next_obs.shape[0], -1)))
+    return jnp.squeeze(jnp.reshape(obs, (obs.shape[0], -1))), jnp.squeeze(
+        jnp.reshape(next_obs, (next_obs.shape[0], -1)))
+
 
 class MF2SACENT_V(Algorithm):
 
@@ -149,20 +151,18 @@ class MF2SACENT_V(Algorithm):
                 q = jnp.minimum(q1, q2)
                 return q
 
-            next_action = self.agent.get_action(next_eval_key, (policy_params, log_alpha, q1_params, q2_params, encoder_params), next_obs)
-
+            next_action = self.agent.get_action(next_eval_key,
+                                                (policy_params, log_alpha, q1_params, q2_params, encoder_params),
+                                                next_obs)
             _, next_entropy=self.agent.get_action_entropy_multistep(next_eval_key,
-                                                                  (policy_params, log_alpha, q1_params, q2_params,encoder_params),
+                                                                  (policy_params, log_alpha, q1_params, q2_params, encoder_params),
                                                                   next_obs)
-
             q1_target = self.agent.q(target_q1_params, next_obs, next_action)
             q2_target = self.agent.q(target_q2_params, next_obs, next_action)
-
             if self.fixed_alpha:
                 q_target = jnp.minimum(q1_target, q2_target)  - jnp.float32(self.alpha_value) * next_entropy
             else:
                 q_target = jnp.minimum(q1_target, q2_target) - jnp.exp(log_alpha) * next_entropy
-            # q_target = jnp.minimum(q1_target, q2_target)  # - jnp.exp(log_alpha) * next_logp
             q_backup = reward + discount * q_target
 
             def q_loss_fn(q1_params: hk.Params, q2_params: hk.Params, encoder_params: hk.Params) -> jax.Array:
@@ -174,7 +174,8 @@ class MF2SACENT_V(Algorithm):
                 q_loss = q1_loss + q2_loss
                 return q_loss, (q1_loss, q2_loss, q1, q2, obs_latent)
 
-            (q_loss, (q1_loss, q2_loss, q1, q2, obs_latent)), (q1_grads, q2_grads, encoder_grads) = jax.value_and_grad(q_loss_fn, argnums=(0, 1, 2), has_aux=True)(q1_params, q2_params, encoder_params)
+            (q_loss, (q1_loss, q2_loss, q1, q2, obs_latent)), (q1_grads, q2_grads, encoder_grads) = jax.value_and_grad(
+                q_loss_fn, argnums=(0, 1, 2), has_aux=True)(q1_params, q2_params, encoder_params)
             q1_update, q1_opt_state = self.optim.update(q1_grads, q1_opt_state)
             q2_update, q2_opt_state = self.optim.update(q2_grads, q2_opt_state)
             encoder_update, encoder_opt_state = self.optim.update(encoder_grads, encoder_opt_state)
@@ -200,6 +201,7 @@ class MF2SACENT_V(Algorithm):
 
             def q_sample(t: jax.Array, x_start: jax.Array, noise: jax.Array):
                 return t * x_start + (1 - t) * noise
+
             noisy_actions = q_sample(t, action, noise_sample)
             noisy_actions_repeat = jnp.repeat(jnp.expand_dims(noisy_actions, axis=1), axis=1, repeats=self.K)
             std = jnp.expand_dims((1-t) / t, axis=-1)
@@ -214,49 +216,48 @@ class MF2SACENT_V(Algorithm):
             # noise=tnormal_noise
             clean_samples = 1 / t[:, :, None] * noisy_actions_repeat - std * noise
 
-            observations_repeat = jnp.repeat(jnp.expand_dims(obs, axis=1), axis=1, repeats=self.K)
+            observations_repeat = jnp.repeat(jnp.expand_dims(obs_latent, axis=1), axis=1, repeats=self.K)
 
             devices = jax.devices()
-            compute_Q_DDP = partial(shard_map, mesh=Mesh(devices, ('i',)), in_specs=(P('i'), P('i')),
-                                    out_specs=(P('i')))(get_min_q)
-            critic = compute_Q_DDP(observations_repeat, clean_samples)  # batch_size, K
+            compute_Q_DDP = partial(shard_map, mesh=Mesh(devices, ('i',)), in_specs=(P('i'), P('i')), out_specs=(P('i')))(get_min_q)
+            critic = compute_Q_DDP( observations_repeat, clean_samples)  # batch_size, K
 
             if self.fixed_alpha:
                 weight = nn.softmax((1 / jnp.float32(self.alpha_value)) * critic, axis=1)
             else:
-                safe_alpha = jnp.maximum(jnp.exp(log_alpha), 0.001)
+                safe_alpha = jnp.maximum(jnp.exp(log_alpha), 0.00001)
                 weight = nn.softmax((1 / jnp.exp(safe_alpha)) * critic, axis=1)
 
-            u_estimation = jnp.sum(weight[:, :, None] * (clean_samples - noise), axis=1)
-            obs_expanded = jnp.repeat(obs, self.K, axis=0)
+            u_estimation = jnp.sum(weight[:,:,None] * (clean_samples-noise), axis=1)
+            obs_expanded = jnp.repeat(obs_latent, self.K, axis=0)
+
 
             def policy_loss_fn(policy_params) -> jax.Array:
                 def denoiser(x, r, t):
-                    return self.agent.policy(policy_params, obs_expanded, x, r, t)
+                    return self.agent.policy(policy_params,obs_expanded, x, r, t)
 
-                loss, dudt, u_out, dudt_out, dudt_max = self.agent.flow.reverse_weighted_p_loss(weight, denoiser, r, t,
-                                                                                                clean_samples, noise,
-                                                                                                noisy_actions)
-                u_pred = jnp.mean(u_out)
-                dudt_pred = jnp.mean(dudt_out)
-                # loss*
+                loss,dudt,u_out,dudt_out,dudt_max = self.agent.flow.reverse_weighted_p_loss(weight, denoiser, r, t,clean_samples,noise,
+                                                               noisy_actions)
+                u_pred=jnp.mean(u_out)
+                dudt_pred=jnp.mean(dudt_out)
 
-                acts = self.agent.get_vanilla_action(acts_key, (policy_params, log_alpha, q1_params, q2_params), obs)
-                q1_target = self.agent.q(target_q1_params, obs, acts)
-                q2_target = self.agent.q(target_q2_params, obs, acts)
+                acts = self.agent.get_vanilla_action(acts_key,
+                                                     (policy_params, log_alpha, q1_params, q2_params, encoder_params),
+                                                     obs_latent)
+                q1_target = self.agent.q(target_q1_params, obs_latent, acts)
+                q2_target = self.agent.q(target_q2_params, obs_latent, acts)
                 q_target = jnp.minimum(q1_target, q2_target)
                 loss += jnp.mean(-q_target)
 
-                return loss, (jnp.sum(weight[:, :, None]),
+                # return loss, (q_weights, scaled_q, q_mean, q_std)
+                return loss, (jnp.sum(weight[:,:,None]),
                               u_estimation,
-                              jnp.mean(jnp.sum(weight[:, :, None])),
-                              jnp.std(jnp.sum(weight[:, :, None])),
-                              dudt, u_pred, dudt_pred, dudt_max)
-                # return loss, (0, 0, 0, 0)
+                              jnp.mean(jnp.sum(weight[:,:,None])),
+                              jnp.std(jnp.sum(weight[:,:,None])),
+                              dudt,u_pred,dudt_pred,dudt_max)
 
-            (total_loss, (q_weights, scaled_q, q_mean, q_std, dudt, u_pred, dudt_pred,
-                          dudt_max)), policy_grads = jax.value_and_grad(policy_loss_fn,
-                                                                        has_aux=True)(
+            (total_loss, (q_weights, scaled_q, q_mean, q_std,dudt,u_pred,dudt_pred,dudt_max)), policy_grads = jax.value_and_grad(policy_loss_fn,
+                                                                                                  has_aux=True)(
                 policy_params)
 
             # update alpha
@@ -282,7 +283,8 @@ class MF2SACENT_V(Algorithm):
             def delay_alpha_param_update(optim, params, opt_state):
                 return jax.lax.cond(
                     step % self.delay_alpha_update == 0,
-                    lambda params, opt_state: param_update(optim, params, jax.grad(log_alpha_loss_fn)(params), opt_state),
+                    lambda params, opt_state: param_update(optim, params, jax.grad(log_alpha_loss_fn)(params),
+                                                           opt_state),
                     lambda params, opt_state: (params, opt_state),
                     params, opt_state
                 )
@@ -297,7 +299,8 @@ class MF2SACENT_V(Algorithm):
 
             q1_params, q1_opt_state = param_update(self.optim, q1_params, q1_grads, q1_opt_state)
             q2_params, q2_opt_state = param_update(self.optim, q2_params, q2_grads, q2_opt_state)
-            policy_params, policy_opt_state = delay_param_update(self.policy_optim, policy_params, policy_grads, policy_opt_state)
+            policy_params, policy_opt_state = delay_param_update(self.policy_optim, policy_params, policy_grads,
+                                                                 policy_opt_state)
             log_alpha, log_alpha_opt_state = delay_alpha_param_update(self.alpha_optim, log_alpha, log_alpha_opt_state)
 
             target_q1_params = delay_target_update(q1_params, target_q1_params, self.tau)
@@ -308,8 +311,10 @@ class MF2SACENT_V(Algorithm):
             new_running_std = running_std + 0.001 * (q_std - running_std)
 
             state = Diffv2TrainState(
-                params=Diffv2Params(q1_params, q2_params, target_q1_params, target_q2_params, policy_params, target_policy_params, log_alpha, encoder_params),
-                opt_state=Diffv2OptStates(q1=q1_opt_state, q2=q2_opt_state, policy=policy_opt_state, log_alpha=log_alpha_opt_state, encoder=encoder_opt_state),
+                params=Diffv2Params(q1_params, q2_params, target_q1_params, target_q2_params, policy_params,
+                                    target_policy_params, log_alpha, encoder_params),
+                opt_state=Diffv2OptStates(q1=q1_opt_state, q2=q2_opt_state, policy=policy_opt_state,
+                                          log_alpha=log_alpha_opt_state, encoder=encoder_opt_state),
                 step=step + 1,
                 entropy=jnp.float32(0.0),
                 running_mean=new_running_mean,
@@ -327,11 +332,12 @@ class MF2SACENT_V(Algorithm):
                 "q_weights_mean": jnp.mean(q_weights),
                 "q_weights_min": jnp.min(q_weights),
                 "q_weights_max": jnp.max(q_weights),
-                "scale_q_mean": jnp.mean(Z),
-                "scale_q_std": jnp.std(Z),
+                "scale_q_mean": jnp.mean(scaled_q),
+                "scale_q_std": jnp.std(scaled_q),
                 "running_q_mean": new_running_mean,
                 "running_q_std": new_running_std,
                 "entropy_approx": jnp.mean(next_entropy),
+                "ent_loss": jnp.mean(next_entropy)-self.agent.target_entropy,
                 "u_pred": u_pred,
                 "dudt": dudt_pred,
                 "dudt_max": dudt_max
@@ -343,10 +349,12 @@ class MF2SACENT_V(Algorithm):
                                         stateless_get_vanilla_action_step=self.agent.get_vanilla_action_step)
 
     def get_policy_params(self):
-        return (self.state.params.policy, self.state.params.log_alpha, self.state.params.q1, self.state.params.q2, self.state.params.encoder)
+        return (self.state.params.policy, self.state.params.log_alpha, self.state.params.q1, self.state.params.q2,
+                self.state.params.encoder)
 
     def get_policy_params_to_save(self):
-        return (self.state.params.target_poicy, self.state.params.log_alpha, self.state.params.q1, self.state.params.q2, self.state.params.encoder)
+        return (self.state.params.target_poicy, self.state.params.log_alpha, self.state.params.q1, self.state.params.q2,
+                self.state.params.encoder)
 
     def save_policy(self, path: str) -> None:
         policy = jax.device_get(self.get_policy_params_to_save())

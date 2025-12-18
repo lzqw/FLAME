@@ -524,6 +524,7 @@ def create_mf2_sac_ent2_net(
     activation: Activation = jax.nn.relu,
     num_timesteps: int = 20,
     num_timesteps_test: int = 20,
+    num_ent_timesteps: int=2,
     num_particles: int = 32,
     noise_scale: float = 0.05,
     target_entropy_scale=0.9,
@@ -553,7 +554,7 @@ def create_mf2_sac_ent2_net(
     params = init(key, sample_obs, sample_act)
 
     net = MF2SACENT2Net(q=q.apply, policy=policy.apply, num_timesteps=num_timesteps, num_timesteps_test=num_timesteps_test,
-                 act_dim=act_dim,
+                 act_dim=act_dim, num_ent_timesteps=num_ent_timesteps,
                  target_entropy=-act_dim * target_entropy_scale, num_particles=num_particles, noise_scale=noise_scale,
                  noise_schedule='linear', alpha_value = alpha_value,fixed_alpha=fixed_alpha
     )
