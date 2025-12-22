@@ -82,7 +82,7 @@ def str2bool(v):
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     #python scripts/train_mujoco.py --env HalfCheetah-v5 --diffusion_steps 20 --alg rf_sac_estient  --noise_scale 0.1 the best for halfcheetah
-    parser.add_argument("--alg", type=str, default="rf2_sac_ent")
+    parser.add_argument("--alg", type=str, default="sac")
     parser.add_argument("--env", type=str, default="MultiGoal-Custom-v0")
     parser.add_argument("--suffix", type=str, default="test_use_atp1")
     parser.add_argument("--num_vec_envs", type=int, default=0)
@@ -91,7 +91,7 @@ if __name__ == "__main__":
     parser.add_argument("--diffusion_steps", type=int, default=20)  #SET 1 FOT MF BASED ALGORITHM
     parser.add_argument("--diffusion_steps_test", type=int, default=20)
     parser.add_argument("--diffusion_hidden_dim", type=int, default=256)
-    parser.add_argument("--start_step", type=int, default=int(100)) # other envs 3e4
+    parser.add_argument("--start_step", type=int, default=int(10)) # other envs 3e4
     parser.add_argument("--total_step", type=int, default=int(1e6))
     parser.add_argument("--visualize_every", type=int, default=2000)
     parser.add_argument("--lr", type=float, default=3e-4)
