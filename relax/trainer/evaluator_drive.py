@@ -78,9 +78,5 @@ if __name__ == "__main__":
 
     ep_len = np.array(ep_len_list)
     ep_ret = np.array(ep_ret_list)
-    # logger.add_scalar("evaluate/episode_length", ep_len_mean.mean(), step)
-    # logger.add_scalar("evaluate/episode_return", ep_ret_mean.mean(), step)
-    # # logger.add_histogram("evaluate/episode_length", ep_len_mean, step)
-    # # logger.add_histogram("evaluate/episode_return", ep_ret_mean, step)
-    # logger.flush()
+
     logger.log(step, ep_ret.mean(), ep_ret.std())

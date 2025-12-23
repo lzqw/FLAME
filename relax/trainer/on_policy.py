@@ -13,7 +13,7 @@ from relax.algorithm import Algorithm
 from relax.env import RelaxWrapper
 from relax.env.vector import VectorEnv
 from relax.trainer.accumulator import Interval, VectorFragmentSampleLog
-from relax.utils.experience import GAEExperience
+from scripts.experience import GAEExperience
 
 class OnPolicySampler:
     def __init__(

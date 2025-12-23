@@ -1,10 +1,7 @@
 import argparse
 import time
-import os
 import jax
-import yaml
 from functools import partial
-import numpy as np
 
 # --- Imports for overriding setup and finish ---
 from tensorboardX import SummaryWriter
@@ -15,7 +12,7 @@ from tqdm import tqdm
 from relax.utils.fs import PROJECT_ROOT
 from relax.utils.random_utils import seeding
 from relax.buffer import TreeBuffer
-from relax.utils.experience import Experience
+from scripts.experience import Experience
 from relax.trainer.off_policy import OffPolicyTrainer, create_iter_key_fn
 
 # Algorithms

@@ -3,18 +3,18 @@ from pathlib import Path
 import pickle
 
 import numpy as np
-import jax, jax.numpy as jnp
+import jax
 
-from relax.utils.experience import Experience
+from scripts.experience import Experience
 from relax.utils.persistence import make_persist
 from relax.utils.typing import Metric
 
 
 class Algorithm:
     # NOTE: a not elegant blanket implementation of the algorithm interface
-    def _implement_common_behavior(self, stateless_update, stateless_get_action, stateless_get_deterministic_action, 
-                                   stateless_get_action_full=None, 
-                                   stateless_get_value=None, 
+    def _implement_common_behavior(self, stateless_update, stateless_get_action, stateless_get_deterministic_action,
+                                   stateless_get_action_full=None,
+                                   stateless_get_value=None,
                                    stateless_get_vanilla_action=None,
                                    stateless_get_vanilla_action_step=None):
         self._update = jax.jit(stateless_update)

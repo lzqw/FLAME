@@ -6,7 +6,7 @@ import haiku as hk
 
 from relax.algorithm.base import Algorithm
 from relax.network.sac import SACNet, SACParams
-from relax.utils.experience import Experience
+from scripts.experience import Experience
 from relax.utils.typing import Metric
 
 

@@ -8,7 +8,6 @@ import pickle
 
 from relax.algorithm.base import Algorithm
 from relax.network.rf_v import RFNet_V, Diffv2Params
-from relax.utils.experience import Experience
 from relax.utils.typing import Metric
 
 

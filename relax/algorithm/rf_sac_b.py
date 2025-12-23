@@ -13,7 +13,7 @@ import pickle
 
 from relax.algorithm.base import Algorithm
 from relax.network.rf_sac_b import RFSACBNet, Diffv2Params
-from relax.utils.experience import Experience
+from scripts.experience import Experience
 from relax.utils.typing import Metric
 
 

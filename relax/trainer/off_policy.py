@@ -14,7 +14,7 @@ from relax.algorithm import Algorithm
 from relax.buffer import ExperienceBuffer
 from relax.env.vector import VectorEnv
 from relax.trainer.accumulator import SampleLog, VectorSampleLog, UpdateLog, Interval
-from relax.utils.experience import Experience
+from scripts.experience import Experience
 
 
 class OffPolicyTrainer:

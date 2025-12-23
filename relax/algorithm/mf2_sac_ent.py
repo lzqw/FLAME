@@ -12,7 +12,7 @@ from jax.experimental.shard_map import shard_map
 
 from relax.algorithm.base import Algorithm
 from relax.network.mf2_sac_ent import MF2SACENTNet, Diffv2Params
-from relax.utils.experience import Experience
+from scripts.experience import Experience
 from relax.utils.typing import Metric
 
 

@@ -2,7 +2,6 @@ from pathlib import Path
 import subprocess
 import sys
 from typing import Callable, Optional, Tuple
-import random
 
 import jax
 import numpy as np
@@ -15,7 +14,7 @@ from relax.algorithm import Algorithm
 from relax.buffer.large import ReplayBufferStorage, ReplayBuffer
 from relax.env.vector import VectorEnv
 from relax.trainer.accumulator import SampleLog, VectorSampleLog, UpdateLog, Interval
-from relax.utils.experience import Experience
+from scripts.experience import Experience
 
 
 class OffPolicyTrainer:

@@ -7,11 +7,10 @@ import pickle
 from functools import partial
 from jax.experimental.shard_map import shard_map
 from jax.sharding import Mesh, PartitionSpec as P
-import flax.linen as nn
 
 from relax.algorithm.base import Algorithm
 from relax.network.mf_sac2_ent import MFSAC2ENTNet, Diffv2Params
-from relax.utils.experience import Experience
+from scripts.experience import Experience
 from relax.utils.typing import Metric
 
 class Diffv2OptStates(NamedTuple):

@@ -7,10 +7,8 @@ import haiku as hk
 import pickle
 
 from relax.algorithm.base import Algorithm
-from relax.network.dacer import DACERNet, DACERParams
-from relax.network.sdac import SDACNet, Diffv2Params
 from relax.network.qvpo import QVPONet, QVPOParams
-from relax.utils.experience import Experience
+from scripts.experience import Experience
 from relax.utils.typing import Metric
 
 
@@ -117,7 +115,7 @@ class QVPO(Algorithm):
                 q_mean = get_min_q(obs, new_action)
                 q_weights = jnp.where(q_mean > 1., q_mean, jnp.zeros_like(q_mean))
                 # q_weights = q_weights
-                
+
                 # Entropy regularization in QVPO
                 ent_obs_key, ent_act_key, ent_q_key = jax.random.split(entropy_key, 3)
                 shuffled_flat_obs = jax.random.permutation(ent_obs_key, obs.flatten().repeat(10))
@@ -138,7 +136,7 @@ class QVPO(Algorithm):
 
 
                 return loss, q_weights
-            
+
             (total_loss, q_weights), policy_grads \
                 = jax.value_and_grad(policy_loss_fn, has_aux=True)(policy_params, q1_params, q2_params)
 

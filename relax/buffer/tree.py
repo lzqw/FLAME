@@ -7,7 +7,7 @@ import jax, jax.tree_util as tree
 from jax import ShapeDtypeStruct
 
 from relax.buffer.base import Buffer
-from relax.utils.experience import Experience
+from scripts.experience import Experience
 
 T = TypeVar("T")
 S = TypeVar("S")

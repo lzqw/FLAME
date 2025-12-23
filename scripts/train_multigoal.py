@@ -1,13 +1,10 @@
 import argparse
 import os.path
-from pathlib import Path
 import time
 from functools import partial
 import yaml
-import relax.env.drive.lane_change
 
 import jax, jax.numpy as jnp
-from numpy.random import sample
 
 from relax.algorithm.sac import SAC
 from relax.algorithm.dacer import DACER
@@ -59,14 +56,12 @@ from relax.network.rf_sac_estient import create_rf_sac_estient_net
 from relax.network.rf_sac_ent import create_rf_sac_ent_net
 from relax.network.rf2_sac_ent import create_rf2_sac_ent_net
 
-from relax.trainer.off_policy import OffPolicyTrainer
 from relax.env import create_env, create_vector_env
 from relax.trainer.off_policy_multi_viz import VisualizingTrainer
-from relax.utils.experience import Experience, ObsActionPair
+from scripts.experience import Experience, ObsActionPair
 from relax.utils.fs import PROJECT_ROOT
 from relax.utils.random_utils import seeding
 from relax.utils.log_diff import log_git_details
-from relax.env.multi_goal.multi_goal_env import MultiGoalEnv
 from relax.utils.viz_utils import MultiGoalVisualizer
 
 def str2bool(v):
@@ -82,7 +77,7 @@ def str2bool(v):
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     #python scripts/train_mujoco.py --env HalfCheetah-v5 --diffusion_steps 20 --alg rf_sac_estient  --noise_scale 0.1 the best for halfcheetah
-    parser.add_argument("--alg", type=str, default="sac")
+    parser.add_argument("--alg", type=str, default="rf2")
     parser.add_argument("--env", type=str, default="MultiGoal-Custom-v0")
     parser.add_argument("--suffix", type=str, default="test_use_atp1")
     parser.add_argument("--num_vec_envs", type=int, default=0)
@@ -90,9 +85,10 @@ if __name__ == "__main__":
     parser.add_argument("--hidden_dim", type=int, default=256)
     parser.add_argument("--diffusion_steps", type=int, default=20)  #SET 1 FOT MF BASED ALGORITHM
     parser.add_argument("--diffusion_steps_test", type=int, default=20)
+    parser.add_argument("--num_ent_timesteps", type=int, default=2)
     parser.add_argument("--diffusion_hidden_dim", type=int, default=256)
     parser.add_argument("--start_step", type=int, default=int(10)) # other envs 3e4
-    parser.add_argument("--total_step", type=int, default=int(1e6))
+    parser.add_argument("--total_step", type=int, default=int(1e5))
     parser.add_argument("--visualize_every", type=int, default=2000)
     parser.add_argument("--lr", type=float, default=3e-4)
     parser.add_argument("--lr_schedule_end", type=float, default=3e-5)
@@ -379,6 +375,7 @@ if __name__ == "__main__":
             return x * jnp.tanh(jax.nn.softplus(x))
         agent, params = create_mf2_sac_ent2_net(init_network_key, obs_dim, act_dim, hidden_sizes, diffusion_hidden_sizes, mish,
                                           num_timesteps=args.diffusion_steps,
+                                          num_ent_timesteps=args.num_ent_timesteps,
                                           num_timesteps_test=args.diffusion_steps_test,
                                           num_particles=args.num_particles,
                                           noise_scale=args.noise_scale,

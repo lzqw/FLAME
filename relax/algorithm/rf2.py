@@ -8,7 +8,7 @@ import pickle
 
 from relax.algorithm.base import Algorithm
 from relax.network.rf2 import RF2Net, Diffv2Params
-from relax.utils.experience import Experience
+from scripts.experience import Experience
 from relax.utils.typing import Metric
 
 
@@ -210,8 +210,8 @@ class RF2(Algorithm):
             }
             return state, info
 
-        self._implement_common_behavior(stateless_update, self.agent.get_action, self.agent.get_deterministic_action, 
-                                        stateless_get_vanilla_action=self.agent.get_vanilla_action, 
+        self._implement_common_behavior(stateless_update, self.agent.get_action, self.agent.get_deterministic_action,
+                                        stateless_get_vanilla_action=self.agent.get_vanilla_action,
                                         stateless_get_vanilla_action_step=self.agent.get_vanilla_action_step)
 
     def get_policy_params(self):

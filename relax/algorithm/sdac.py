@@ -7,9 +7,8 @@ import haiku as hk
 import pickle
 
 from relax.algorithm.base import Algorithm
-from relax.network.dacer import DACERNet, DACERParams
 from relax.network.sdac import SDACNet, Diffv2Params
-from relax.utils.experience import Experience
+from scripts.experience import Experience
 from relax.utils.typing import Metric
 
 

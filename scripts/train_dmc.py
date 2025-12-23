@@ -1,6 +1,5 @@
 import argparse
 import os.path
-from pathlib import Path
 import time
 from functools import partial
 import yaml
@@ -26,7 +25,7 @@ from relax.network.rf_v import create_rf_net_visual
 from relax.network.qvpo import create_qvpo_net
 from relax.trainer.off_policy import OffPolicyTrainer
 from relax.env import create_env, create_vector_env
-from relax.utils.experience import Experience, ObsActionPair
+from scripts.experience import Experience, ObsActionPair
 from relax.utils.fs import PROJECT_ROOT
 from relax.utils.random_utils import seeding
 from relax.utils.log_diff import log_git_details

@@ -8,7 +8,7 @@ import pickle
 
 from relax.algorithm.base import Algorithm
 from relax.network.mf2_v import MF2Net_V, Diffv2Params
-from relax.utils.experience import Experience
+from scripts.experience import Experience
 from relax.utils.typing import Metric
 
 

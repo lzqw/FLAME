@@ -1,13 +1,10 @@
 import argparse
 import os.path
-from pathlib import Path
 import time
 from functools import partial
 import yaml
-import relax.env.drive.lane_change
 
 import jax, jax.numpy as jnp
-from numpy.random import sample
 
 from relax.algorithm.sac import SAC
 from relax.algorithm.dacer import DACER
@@ -61,12 +58,11 @@ from relax.network.rf2_sac_ent import create_rf2_sac_ent_net
 
 from relax.trainer.off_policy import OffPolicyTrainer
 from relax.env import create_env, create_vector_env
-from relax.utils.experience import Experience, ObsActionPair
+from scripts.experience import Experience, ObsActionPair
 from relax.utils.fs import PROJECT_ROOT
 from relax.utils.random_utils import seeding
 from relax.utils.log_diff import log_git_details
 
-import relax.env.antmaze
 
 def str2bool(v):
     if isinstance(v, bool):

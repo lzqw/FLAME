@@ -1,6 +1,5 @@
 import argparse
 import os
-from pathlib import Path
 import time
 from functools import partial
 import yaml
@@ -19,7 +18,7 @@ from relax.algorithm.rf2_sac_ent_v import RF2SACENT_V
 from relax.algorithm.mf2_sac_ent_v import MF2SACENT_V
 
 
-from relax.buffer.large import ReplayBufferStorage, ReplayBuffer
+from relax.buffer.large import ReplayBufferStorage
 from relax.buffer.large import make_replay_loader
 from relax.network.sac_v import create_sac_net_visual
 from relax.network.rf_v import create_rf_net_visual
@@ -31,7 +30,6 @@ from relax.network.mf2_sac_ent_v import create_mf2_sac_ent_net_visual
 
 from relax.trainer.off_policy_visual import OffPolicyTrainer
 from relax.env import create_env, create_vector_env
-from relax.utils.experience import Experience, ObsActionPair
 from relax.utils.fs import PROJECT_ROOT
 from relax.utils.random_utils import seeding
 from relax.utils.log_diff import log_git_details

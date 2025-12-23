@@ -4,7 +4,6 @@ import jax, jax.numpy as jnp
 import numpy as np
 import optax
 import haiku as hk
-import pickle
 from jax.experimental.shard_map import shard_map
 from jax.sharding import Mesh, PartitionSpec as P
 import pickle
@@ -12,7 +11,6 @@ from functools import partial
 
 from relax.algorithm.base import Algorithm
 from relax.network.rf2_sac_ent_v import RF2SACENTNet_V, Diffv2Params
-from relax.utils.experience import Experience
 from relax.utils.typing import Metric
 
 
