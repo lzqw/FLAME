@@ -66,8 +66,8 @@ def get_args_from_yaml(config_path):
 
 if __name__ == "__main__":
     # 路径配置
-    CONFIG_DIR = "/home/lzqw/PycharmProject/DP_RL/DP_result/HalfCheetah-v5/rf2_sac_ent_2025-11-20_08-20-44_s100_test_use_atp1"
-    WEIGHT_FILE = CONFIG_DIR + "/policy-1500000-1500000.pkl"
+    CONFIG_DIR = "/home/lzqw/PycharmProject/DP_RL/DP_result/Ant-v5/rf2_sac_ent_2025-11-21_15-40-12_s100_test_use_atp1"
+    WEIGHT_FILE = CONFIG_DIR + "/policy-1125000-1125000.pkl"
 
     args = get_args_from_yaml(CONFIG_DIR)
 
@@ -94,39 +94,51 @@ if __name__ == "__main__":
     params = load_policy_parameters(WEIGHT_FILE)
 
     # --- 轨迹生成逻辑 ---
-    num_samples = 10  # 绘制 20 条彼此接近的轨迹
-    num_steps = 20  # ODE 积分步数
+    # ... (前面的初始化代码保持不变)
+
+    # --- 轨迹生成逻辑 ---
+
+    # 【手动设置区】：在这里定义你想要的初始噪声坐标
+    # 每一行代表一个轨迹的起始点，每一列对应 action 的一个维度
+    manual_points = [
+        [0.2, -1.23],  # 轨迹 1 的 (dim0, dim1)
+        [0.1, -0.6],  # 轨迹 2
+        [0.6, -0.7],  # 轨迹 3
+        [0.5, -0.4],  # 轨迹 4
+        [0.4, -0.2],  # 轨迹 5
+        # [-0.3,-0.1],  # 轨迹 6
+    ]
+
+    # 将 2 维坐标填充到环境所需的 act_dim (Ant-v5 为 8)
+    a0_base = jnp.zeros((len(manual_points), act_dim))
+    # 将手动设置的 [x, y] 填入 act 的前两个维度 (或者你想要的维度)
+    for i, p in enumerate(manual_points):
+        a0_base = a0_base.at[i, 0].set(p[0])
+        a0_base = a0_base.at[i, 1].set(p[1])
+
+    num_samples = a0_base.shape[0]
+    num_steps = 20
     dt = 1.0 / num_steps
 
     # 固定状态
     obs_single, _ = env.reset()
     obs_batch = jnp.repeat(jnp.expand_dims(obs_single, 0), num_samples, axis=0)
 
-    # 【关键修改】：生成彼此接近的初始 a0
-    rng = jax.random.PRNGKey(42)
-    key_center, key_noise = jax.random.split(rng)
-    # key_center*=0
-
-    # 1. 先随机选一个中心点
-    center_a0 = jax.random.normal(key_center, (1, act_dim))
-    # 2. 在中心点周围添加微小扰动 (scale 设为 0.1)
-    a_t = center_a0 + jax.random.normal(key_noise, (num_samples, act_dim)) * 0.2
-    # a_t = jnp.clip(a_t, -1, 1)
-    # a_t = jax.random.normal(key_noise, (num_samples, act_dim)) *0.5
+    a_t = a0_base
     trajectories = [a_t]
 
-    print(f"正在模拟 ODE 积分。初始动作点彼此接近，观察演化过程...")
+    print(f"正在模拟 ODE 积分。初始动作点已手动设置...")
     for i in range(num_steps):
         t_current = i * dt
         v = agent.policy(params.policy, obs_batch, a_t, t_current)
         a_t = a_t + v * dt
         trajectories.append(a_t)
 
-    trajectories = jnp.stack(trajectories)  # [steps+1, samples, act_dim]
+    trajectories = jnp.stack(trajectories)
 
+    # --- 绘图逻辑 (Times New Roman & Bold) ---
     plt.rcParams["font.family"] = "serif"
     plt.rcParams["font.serif"] = ["Times New Roman"] + plt.rcParams["font.serif"]
-    # 设置全局加粗
     plt.rcParams["font.weight"] = "bold"
     plt.rcParams["axes.labelweight"] = "bold"
     plt.rcParams["axes.titleweight"] = "bold"
@@ -136,39 +148,27 @@ if __name__ == "__main__":
     colors = plt.cm.viridis(np.linspace(0, 1, total_points))
 
     for i in range(num_samples):
-        # 注意：你代码中选择了索引 3 和 4
+        # 绘制你设置的维度（例如 0 和 1）
         tx = trajectories[:, i, 0]
         ty = trajectories[:, i, 1]
 
-        # 绘制渐变点和连线
         for j in range(total_points - 1):
             plt.plot(tx[j:j + 2], ty[j:j + 2], color=colors[j], alpha=0.5, linewidth=1.2, zorder=1)
             plt.scatter(tx[j], ty[j], color=colors[j], s=10, zorder=2)
 
-        # 初始位置 a0: 蓝色三角形
         plt.scatter(tx[0], ty[0], color='blue', marker='^', s=60, edgecolors='white', zorder=5)
-
-        # 终点 a1: 红色星号
         plt.scatter(tx[-1], ty[-1], color='red', marker='*', s=120, edgecolors='black', zorder=6)
 
-    # 刻度设置与加粗
+    plt.xlim([-1.1, 1.1])
+    plt.ylim([-1.1, 1.1])
     plt.xticks(np.linspace(-1, 1, 5), weight='bold')
     plt.yticks(np.linspace(-1, 1, 5), weight='bold')
-
-    # 设置标题和标签，显式指定字体加粗
-    # plt.title(f"RF Trajectory Evolution (Env: {args.env})\nSame Obs, Local Cluster $a_0$",
-    #           fontsize=16, fontweight='bold')
-    plt.xlabel("Action Dimension 3", fontsize=14, fontweight='bold')
-    plt.ylabel("Action Dimension 4", fontsize=14, fontweight='bold')
-
-    # 保持坐标轴比例一致
+    plt.xlabel("Action Dimension 0", fontsize=14, fontweight='bold')
+    plt.ylabel("Action Dimension 1", fontsize=14, fontweight='bold')
     plt.gca().set_aspect('equal', adjustable='box')
     plt.grid(True, linestyle=':', alpha=0.4)
-
-    # 渲染 pdf 前确保 layout
     plt.tight_layout()
 
-    save_path = Path(CONFIG_DIR) / "rf_local_cluster_fixed_axis.pdf"
+    save_path = Path(CONFIG_DIR) / "rf_manual_points.pdf"
     plt.savefig(save_path, bbox_inches='tight')
-    print(f"坐标轴固定后的局部簇采样轨迹图（Times New Roman 加粗版）已保存至: {save_path}")
     plt.show()

@@ -131,6 +131,20 @@ class MeanFlow:
         _, x = jax.lax.scan(body_fn, x, t_seq)
         return x
 
+    def p_sample_traj_with_start(self, key: jax.Array, model: MeanFlowModel, shape: Tuple[int, ...]) -> jax.Array:
+        x_init = 0.5 * jax.random.normal(key, shape)
+        dt = 1.0 / self.num_timesteps
+
+        def body_fn(x, t):
+            tau = t * dt
+            drift = model(x, tau, tau + dt)
+            x_next = x - drift
+            return x_next, x_next
+
+        t_seq = jnp.arange(self.num_timesteps)
+        _, x_traj = jax.lax.scan(body_fn, x_init, t_seq)
+        return jnp.concatenate([x_init[None, ...], x_traj], axis=0)
+
     def p_sample_fast(self, model: FlowModel, shape: Tuple[int, ...]) -> jax.Array:
         x = jnp.zeros(shape)
         drift = model(x, 0, 1)

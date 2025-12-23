@@ -91,6 +91,14 @@ class MFNet:
         act = sample(key)
         return act
 
+    def get_vanilla_action_traj(self, key: jax.Array, policy_params: hk.Params, obs: jax.Array) -> jax.Array:
+        policy_params, _, _, _ = policy_params
+
+        def model_fn(x, r, t):
+            return self.policy(policy_params, obs, x, r, t)
+
+        return self.flow_test.p_sample_traj_with_start(key, model_fn, (*obs.shape[:-1], self.act_dim))
+
     def get_vanilla_action_fast(self, policy_params: hk.Params, obs: jax.Array) -> jax.Array:
 
         def model_fn(x, r, t):

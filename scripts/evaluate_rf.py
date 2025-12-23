@@ -18,7 +18,8 @@ from matplotlib import pyplot as plt
 
 from relax.env import create_env
 from relax.network.rf import create_rf_net
-
+from relax.network.mf import create_mf_net
+from relax.network.sdac import create_sdac_net
 
 def evaluate(env, policy_fn, policy_params, num_episodes, iter_key):
     ep_len_list = []
@@ -39,20 +40,23 @@ def evaluate(env, policy_fn, policy_params, num_episodes, iter_key):
             # print(end_time - start_time)
             # print("------------------")
             ep_time += (end_time - start_time)
+
             act = act[-1].clip(-1, 1)
             obs, reward, terminated, truncated, _ = env.step(act)
             ep_len += 1
             ep_ret += reward
             if terminated or truncated:
                 break
-            # if ep_len % 100 == 0:
-            #     vis_sample_path(obs, policy_fn, policy_params, iter_key2, episode, ep_len)
+            if ep_len % 100 == 0:
+                vis_sample_path(obs, policy_fn, policy_params, iter_key2, episode, ep_len)
         ep_len_list.append(ep_len)
         ep_ret_list.append(ep_ret)
         print("ep_time:", ep_time / ep_len)
     return ep_len_list, ep_ret_list
 
 def vis_sample_path(obs, policy_fn, policy_params, iterkey, episode, ep_len, num_samples=5):
+    save_dir = Path("figures/rf_sample_paths_5000")
+    save_dir.mkdir(parents=True, exist_ok=True)
     paths = []
     for _ in range(num_samples):
         iterkey, iterkey1 = random.split(iterkey)
@@ -72,10 +76,10 @@ def vis_sample_path(obs, policy_fn, policy_params, iterkey, episode, ep_len, num
         plt.plot(x_vals[-1], y_vals[-1], '^', color=color, alpha=1.0, markersize=12)
         plt.xlabel(f"Action axis {idx1}", fontsize=18)
         plt.ylabel(f"Action axis {idx2}", fontsize=18)
-        plt.title("Ant-v4", fontsize=20)
+        plt.title("Ant-v5", fontsize=20)
         plt.grid(True)
         plt.tight_layout()
-    plt.savefig(f"figures/rf_sample_paths_5000/{episode}-{ep_len}.png")
+    plt.savefig(save_dir / f"{episode}-{ep_len}.png")
 
 class Logger(object):
 	def __init__(self, log_dir, sample_steps):
@@ -91,13 +95,13 @@ class Logger(object):
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
-    parser.add_argument("--policy_root", type=str, required=True)
-    parser.add_argument("--env", type=str, required=True)
-    parser.add_argument("--num_episodes", type=int, required=True)
-    parser.add_argument("--sample_steps", type=int, required=True)
-    parser.add_argument("--debug", action='store_true', default=False)
+    parser.add_argument("--policy_root", type=Path, default="/home/lzqw/PycharmProject/DP_RL/DP_result/Hopper-v5/sdac_2025-12-22_23-12-02_s2_test_use_atp1" )
+    parser.add_argument("--env", type=str, default="Hopper-v5")
+    parser.add_argument("--num_episodes", type=int, default=5)
+    parser.add_argument("--sample_steps", type=int, default=20)
+    parser.add_argument("--debug", type=bool, default=False)
     args = parser.parse_args()
-
+    type="sdac"
     if args.debug:
         from jax import config
         config.update("jax_disable_jit", True)
@@ -115,7 +119,19 @@ if __name__ == "__main__":
         cfg = yaml.safe_load(f)
         hidden_sizes = [cfg["hidden_dim"]] * cfg["hidden_num"]
         diffusion_hidden_sizes = [cfg["diffusion_hidden_dim"]] * cfg["hidden_num"]
-        rf_net, _ = create_rf_net(net_key, obs_dim, act_dim, hidden_sizes, diffusion_hidden_sizes, mish, cfg["diffusion_steps"],
+        if type == "mf":
+            mf_net, _ = create_mf_net(net_key, obs_dim, act_dim, hidden_sizes, diffusion_hidden_sizes, mish, cfg["diffusion_steps"],
+                               num_timesteps_test=args.sample_steps,
+                               num_particles=cfg["num_particles"],
+                               noise_scale=cfg["noise_scale"],
+                               target_entropy_scale=cfg["target_entropy_scale"])
+        elif type == "sdac":
+            sdac_net, _ = create_sdac_net(net_key, obs_dim, act_dim, hidden_sizes, diffusion_hidden_sizes, mish, cfg["diffusion_steps"],
+                               num_particles=cfg["num_particles"],
+                               noise_scale=cfg["noise_scale"],
+                               target_entropy_scale=cfg["target_entropy_scale"])
+        else:
+            rf_net, _ = create_rf_net(net_key, obs_dim, act_dim, hidden_sizes, diffusion_hidden_sizes, mish, cfg["diffusion_steps"],
                                num_timesteps_test=args.sample_steps,
                                num_particles=cfg["num_particles"],
                                noise_scale=cfg["noise_scale"],
@@ -123,12 +139,17 @@ if __name__ == "__main__":
 
     @jax.jit
     def policy_fn(key, policy_params, obs):
-        return rf_net.get_vanilla_action_step(key, policy_params, obs)
+        if type == "mf":
+            return mf_net.get_vanilla_action_traj(key, policy_params, obs)
+        elif type == "sdac":
+            return sdac_net.get_action_traj(key, policy_params, obs)
+        else:
+            return rf_net.get_vanilla_action_step(key, policy_params, obs)
 
     logger = Logger(policy_root, args.sample_steps)
 
-    for step in range(5000, 200001, 5000):
-        policy_path = policy_root / f"policy-{5*step}-{step}.pkl"
+    for step in range(8334, 2339444, 8334):
+        policy_path = policy_root / f"policy-{3*step}-{step}.pkl"
 
         with open(policy_path, "rb") as f:
             policy_params = pickle.load(f)
@@ -138,4 +159,4 @@ if __name__ == "__main__":
         time_step = time.time() - time_start
         ep_len = np.array(ep_len_list)
         ep_ret = np.array(ep_ret_list)
-        logger.log(5*step, ep_ret.mean(), ep_ret.std(), time_step)
+        logger.log(2*step, ep_ret.mean(), ep_ret.std(), time_step)
