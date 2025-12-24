@@ -5,44 +5,18 @@ import jax.numpy as jnp
 import haiku as hk
 import numpy as np
 import matplotlib.pyplot as plt
+import matplotlib.gridspec as gridspec
+from scipy.stats import multivariate_normal
 import optax
 import math
-from scipy.stats import multivariate_normal
-
 
 # ==========================================
-# [配置] ICML 绘图风格设置
+# [防爆显存设置]
 # ==========================================
-def configure_icml_style():
-    """
-    配置 Matplotlib 以符合 ICML 论文风格:
-    1. 字体: Times New Roman
-    2. 字号: 适配两栏排版 (Main text ~10pt)
-    3. 样式: 去掉顶部和右侧边框
-    """
-    plt.rcParams.update({
-        "font.family": "serif",
-        "font.serif": ["Times New Roman"],
-        "mathtext.fontset": "stix",  # 数学公式字体风格接近 Times
-        "font.size": 10,  # 全局基础字号
-        "axes.labelsize": 12,  # 坐标轴标签字号
-        "axes.titlesize": 12,  # 标题字号
-        "xtick.labelsize": 10,  # X轴刻度字号
-        "ytick.labelsize": 10,  # Y轴刻度字号
-        "legend.fontsize": 10,  # 图例字号
-        "figure.titlesize": 14,  # 整个画布标题
-        # ICML 单栏宽度约为 3.25 英寸，跨栏约为 6.75 英寸
-        # 这里设置为适合单栏插入的比例
-        "figure.figsize": (6, 4.5),
-        "axes.linewidth": 1.0,  # 边框粗细
-        "lines.linewidth": 1.5,  # 线条粗细
-        "grid.alpha": 0.3,  # 网格透明度
-    })
+os.environ['XLA_PYTHON_CLIENT_PREALLOCATE'] = 'false'
 
 
-# 应用配置
-configure_icml_style()
-
+# os.environ['XLA_PYTHON_CLIENT_ALLOCATOR'] = 'platform' # 如果还OOM，取消此行注释
 
 # ==========================================
 # 1. 定义真实分布 (Ground Truth)
@@ -152,76 +126,16 @@ class Estimator:
 
 
 # ==========================================
-# 4. 新增功能: Entropy Accuracy Plotter
-# ==========================================
-def plot_entropy_accuracy(estimator, params, gmm, rng, grid_size=50):
-    """
-    计算并绘制 Estimated Log-Prob 与 Ground Truth 之间的 MSE 随 ODE Steps 变化的曲线。
-    (已适配 ICML 字体风格)
-    """
-    print("\n--- Running plot_entropy_accuracy ---")
-
-    x = np.linspace(-1, 1, grid_size)
-    y = np.linspace(-1, 1, grid_size)
-    X, Y = np.meshgrid(x, y)
-    points_np = np.stack([X.flatten(), Y.flatten()], axis=1)
-    points = jnp.array(points_np)
-
-    log_prob_true = jnp.array(gmm.log_prob(X, Y).flatten())
-
-    steps_list = [1, 2, 4, 8, 16, 32, 50]
-    mses = []
-
-    N_samples = 10
-
-    for steps in steps_list:
-        print(f"Evaluating MSE for ODE steps = {steps}...")
-        rng, key = jax.random.split(rng)
-
-        @jax.jit
-        def eval_step(k):
-            keys = jax.random.split(k, N_samples)
-            logp = jax.vmap(
-                lambda k_: estimator.compute_log_likelihood(k_, params, points, steps)
-            )(keys)
-            return jnp.mean(logp, axis=0)
-
-        log_prob_est = eval_step(key)
-        mse = jnp.mean((log_prob_est - log_prob_true) ** 2)
-        mses.append(mse)
-
-    # --- 绘图 (ICML Style) ---
-    plt.figure()  # 使用全局设置的 figsize
-
-    # 绘制曲线，使用较深的蓝色，并在数据点上加标记
-    plt.plot(steps_list, mses, 'o-', color='#1f77b4', linewidth=1.5, markersize=5, label='Log-Prob MSE')
-
-    # 移除之前的 hardcoded fontsize，使用全局rcParams
-    plt.xlabel('ODE Solver Steps (NFE)')
-    plt.ylabel('MSE (Est. vs True Log-Prob)')
-
-    # 学术图表通常推荐使用半透明网格
-    plt.grid(True, linestyle='--', alpha=0.4)
-    plt.legend(frameon=False)  # ICML风格通常不喜欢图例有边框
-
-    # 移除上方和右侧的边框 (Despine)
-    ax = plt.gca()
-    ax.spines['top'].set_visible(False)
-    ax.spines['right'].set_visible(False)
-
-    filename = "plot_entropy_accuracy.pdf"
-    plt.savefig(filename, format='pdf', bbox_inches='tight')
-    plt.close()
-    print(f"Saved accuracy plot to {filename}")
-
-
-# ==========================================
-# 5. 主程序
+# 4. 主程序
 # ==========================================
 def main():
     # --- [配置区域] ---
     WEIGHTS_FILE = "toy_gmm_params.pkl"
-    # 模式: "auto", "train", "load"
+
+    # 模式选择: "auto", "train", "load"
+    # "auto": 有文件就加载，没文件就训练
+    # "train": 强制重新训练
+    # "load": 强制加载 (文件不存在报错)
     RUN_MODE = "auto"
 
     # --- [初始化] ---
@@ -234,15 +148,16 @@ def main():
     network = hk.without_apply_rng(hk.transform(net_fn))
     params = network.init(init_rng, dummy_x, dummy_t)
 
-    # --- [加载/训练逻辑] ---
+    # --- [模式控制逻辑] ---
     do_train = False
+
     if RUN_MODE == "train":
         print(f"[Mode: TRAIN] Force retraining...")
         do_train = True
     elif RUN_MODE == "load":
         print(f"[Mode: LOAD] Loading weights from {WEIGHTS_FILE}...")
         if not os.path.exists(WEIGHTS_FILE):
-            raise FileNotFoundError(f"Weight file '{WEIGHTS_FILE}' not found!")
+            raise FileNotFoundError(f"Weight file '{WEIGHTS_FILE}' not found! Cannot load.")
         with open(WEIGHTS_FILE, 'rb') as f:
             params = pickle.load(f)
         print("Weights loaded.")
@@ -260,6 +175,7 @@ def main():
             print(f"[Mode: AUTO] No weights found, starting training...")
             do_train = True
 
+    # --- [训练逻辑] ---
     if do_train:
         total_steps = 20000
         lr_schedule = optax.cosine_decay_schedule(1e-3, total_steps, alpha=1e-2)
@@ -282,7 +198,7 @@ def main():
             new_params = optax.apply_updates(params, updates)
             return new_params, new_opt_state
 
-        print(f"Start training for {total_steps} steps...")
+        print(f"Start training for {total_steps} steps (Batch: 512)...")
         for i in range(total_steps):
             rng, step_key = jax.random.split(rng)
             batch = gmm.sample(512)
@@ -296,10 +212,10 @@ def main():
         print("Training done & saved.")
 
     # --- [绘图逻辑] ---
-    print("Generating Separate PDF Figures...")
+    print("Generating Figure 11...")
     estimator = Estimator(network.apply)
 
-    grid_size = 100
+    grid_size = 50
     x = np.linspace(-1, 1, grid_size)
     y = np.linspace(-1, 1, grid_size)
     X, Y = np.meshgrid(x, y)
@@ -316,45 +232,42 @@ def main():
 
     estimate_grid = jax.jit(estimate_grid_impl, static_argnums=(1, 2))
 
+    fig = plt.figure(figsize=(14, 6), dpi=100)
+    gs = gridspec.GridSpec(2, 4, width_ratios=[1, 0.2, 1, 1])
+
+    # (a) True
+    ax_true = fig.add_subplot(gs[:, 0])
     Z_true = gmm.log_prob(X, Y)
     vmin, vmax = Z_true.min(), Z_true.max()
+    im_true = ax_true.contourf(X, Y, Z_true, levels=50, cmap='viridis', vmin=vmin, vmax=vmax)
+    ax_true.set_aspect('equal')
+    ax_true.set_title('(a) True log probability', y=-0.15)
+    plt.colorbar(im_true, ax=ax_true, fraction=0.046, pad=0.04)
 
-    def save_single_plot(Z, filename, colorbar_mode=None):
-        # 调整 figsize 为正方形，但保持字体比例
-        fig, ax = plt.subplots(figsize=(4, 4))
-        im = ax.contourf(X, Y, Z, levels=50, cmap='viridis', vmin=vmin, vmax=vmax)
+    # (b) Estimated
+    settings = [(20, 50, 0, 2), (20, 10, 0, 3), (50, 50, 1, 2), (50, 10, 1, 3)]
+    for T_val, N_val, row, col in settings:
+        rng, key = jax.random.split(rng)
+        print(f"Computing T={T_val}, N={N_val}...")
+        Z_est = estimate_grid(key, T_val, N_val)
+
+        ax = fig.add_subplot(gs[row, col])
+        im = ax.contourf(X, Y, Z_est, levels=50, cmap='viridis', vmin=vmin, vmax=vmax)
         ax.set_aspect('equal')
-        ax.axis('off')
-        if colorbar_mode == 'left':
-            cbar = fig.colorbar(im, ax=ax, location='left', fraction=0.046, pad=0.04)
-            cbar.ax.tick_params(labelsize=10)  # 单独设置 colorbar 字体
+        if row == 0: ax.set_title(f'N={N_val}')
+        if col == 2:
+            ax.set_ylabel('$x_1$'); ax.text(-1.5, 0, f'T={T_val}', va='center', ha='right', fontsize=12,
+                                            fontweight='bold')
+        else:
+            ax.set_yticks([])
+        if row == 1:
+            ax.set_xlabel('$x_0$')
+        else:
+            ax.set_xticks([])
 
-        print(f"Saving {filename}...")
-        plt.savefig(filename, format='pdf', bbox_inches='tight', pad_inches=0.05)
-        plt.close()
-
-    save_single_plot(Z_true, "plot_ground_truth.pdf", colorbar_mode='left')
-
-    rng, key = jax.random.split(rng)
-    print("Computing N=50, T=10...")
-    Z_est_10 = estimate_grid(key, 10, 50)
-    save_single_plot(Z_est_10, "plot_N50_T10.pdf", colorbar_mode=None)
-
-    rng, key = jax.random.split(rng)
-    print("Computing N=50, T=20...")
-    Z_est_20 = estimate_grid(key, 15, 50)
-    save_single_plot(Z_est_20, "plot_N50_T15.pdf", colorbar_mode=None)
-
-    rng, key = jax.random.split(rng)
-    print("Computing N=50, T=20...")
-    Z_est_20 = estimate_grid(key, 20, 50)
-    save_single_plot(Z_est_20, "plot_N50_T20.pdf", colorbar_mode=None)
-
-    # 运行准确率曲线绘图
-    rng, key = jax.random.split(rng)
-    plot_entropy_accuracy(estimator, params, gmm, key)
-
-    print("All tasks finished.")
+    fig.text(0.65, 0.05, '(b) Estimated log probability', ha='center', fontsize=12)
+    plt.tight_layout()
+    plt.show()
 
 
 if __name__ == "__main__":

@@ -77,17 +77,17 @@ def str2bool(v):
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     #python scripts/train_mujoco.py --env HalfCheetah-v5 --diffusion_steps 20 --alg rf_sac_estient  --noise_scale 0.1 the best for halfcheetah
-    parser.add_argument("--alg", type=str, default="rf2")
+    parser.add_argument("--alg", type=str, default="mf2_sac_ent2")
     parser.add_argument("--env", type=str, default="MultiGoal-Custom-v0")
     parser.add_argument("--suffix", type=str, default="test_use_atp1")
     parser.add_argument("--num_vec_envs", type=int, default=0)
     parser.add_argument("--hidden_num", type=int, default=3)
     parser.add_argument("--hidden_dim", type=int, default=256)
-    parser.add_argument("--diffusion_steps", type=int, default=20)  #SET 1 FOT MF BASED ALGORITHM
-    parser.add_argument("--diffusion_steps_test", type=int, default=20)
-    parser.add_argument("--num_ent_timesteps", type=int, default=2)
+    parser.add_argument("--diffusion_steps", type=int, default=1)  #SET 1 FOT MF BASED ALGORITHM
+    parser.add_argument("--diffusion_steps_test", type=int, default=1)
+    parser.add_argument("--num_ent_timesteps", type=int, default=1)
     parser.add_argument("--diffusion_hidden_dim", type=int, default=256)
-    parser.add_argument("--start_step", type=int, default=int(10)) # other envs 3e4
+    parser.add_argument("--start_step", type=int, default=int(20)) # other envs 3e4
     parser.add_argument("--total_step", type=int, default=int(1e5))
     parser.add_argument("--visualize_every", type=int, default=2000)
     parser.add_argument("--lr", type=float, default=3e-4)
@@ -96,15 +96,15 @@ if __name__ == "__main__":
     parser.add_argument("--delay_alpha_update", type=float, default=20)
     parser.add_argument("--seed", type=int, default=100)
     parser.add_argument("--num_particles", type=int, default=32)
-    parser.add_argument("--noise_scale", type=float, default=1)
-    parser.add_argument("--target_entropy_scale", type=float, default=4.0)
+    parser.add_argument("--noise_scale", type=float, default=0.01)
+    parser.add_argument("--target_entropy_scale", type=float, default=1.0)
     parser.add_argument("--replay_buffer_size", type=int, default=int(1e6))
     parser.add_argument("--debug", default=False)
     parser.add_argument("--use_ema_policy", default=True, action="store_true")
-    parser.add_argument("--sample_k", type=int, default=200)
-    parser.add_argument("--fix_alpha", type=str2bool, default=False)
+    parser.add_argument("--sample_k", type=int, default=400)
+    parser.add_argument("--fix_alpha", type=str2bool, default=True)
     parser.add_argument("--alpha", type=float, default=0.01)
-    parser.add_argument("--init_alpha", type=float, default=1)
+    parser.add_argument("--init_alpha", type=float, default=0.5)
     args = parser.parse_args()
 
     if args.debug:
