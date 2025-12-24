@@ -5,42 +5,44 @@ import jax.numpy as jnp
 import haiku as hk
 import numpy as np
 import matplotlib.pyplot as plt
+import matplotlib.gridspec as gridspec
 from scipy.stats import multivariate_normal
 import optax
 import math
 
 # ==========================================
-# [环境设置]
+# [防爆显存设置]
 # ==========================================
 os.environ['XLA_PYTHON_CLIENT_PREALLOCATE'] = 'false'
 
 
+# os.environ['XLA_PYTHON_CLIENT_ALLOCATOR'] = 'platform' # 如果还OOM，取消此行注释
+
 # ==========================================
-# 1. 真实分布 (Toy GMM)
+# 1. 定义真实分布 (Ground Truth)
 # ==========================================
 class ToyGMM:
     def __init__(self):
-        # 参数设置：让Mode分得稍微开一点，以增加流场的非线性
-        self.means = np.array([[-1.5, -1.5], [-1.5, 1.5], [1.5, 1.5], [1.5, -1.5]])
-        self.std = 0.4
+        self.means = np.array([[-0.5, -0.5], [-0.5, 0.5], [0.5, 0.5], [0.5, -0.5]])
+        self.std = 0.1
         self.cov = np.eye(2) * (self.std ** 2)
         self.weights = np.array([0.25, 0.25, 0.25, 0.25])
 
     def sample(self, n):
         indices = np.random.choice(4, size=n, p=self.weights)
         samples = np.array([np.random.multivariate_normal(self.means[i], self.cov) for i in indices])
-        return jnp.array(samples / 2.0)  # 缩放至 [-1, 1] 附近
+        return jnp.array(samples)
 
     def log_prob(self, x, y):
-        pos = np.dstack((x * 2.0, y * 2.0))
+        pos = np.dstack((x, y))
         p = np.zeros(x.shape)
         for i, mean in enumerate(self.means):
             p += self.weights[i] * multivariate_normal.pdf(pos, mean=mean, cov=self.cov)
-        return np.log(p + 1e-10) + np.log(4.0)  # Jacobian修正
+        return np.log(p + 1e-10)
 
 
 # ==========================================
-# 2. 网络定义 (RF 和 MF 共用同一种结构)
+# 2. 网络定义 (Lite版, 64宽)
 # ==========================================
 class TimestepEmbedding(hk.Module):
     def __init__(self, dim):
@@ -53,109 +55,39 @@ class TimestepEmbedding(hk.Module):
         emb = jnp.exp(jnp.arange(half_dim) * -emb)
         emb = t * emb[None, :]
         emb = jnp.concatenate([jnp.sin(emb), jnp.cos(emb)], axis=-1)
-        if self.dim % 2 == 1: emb = jnp.pad(emb, [[0, 0], [0, 1]])
+        if self.dim % 2 == 1:
+            emb = jnp.pad(emb, [[0, 0], [0, 1]])
         return emb
 
 
 def net_fn(x, t):
-    # 输入处理
     if t.ndim == 0: t = t * jnp.ones((x.shape[0], 1))
     if t.ndim == 1: t = t.reshape(-1, 1)
 
     t_emb = TimestepEmbedding(32)(t)
     x_embed = hk.Linear(64)(x)
     t_embed_split = hk.Linear(64)(t_emb)
+
     h = jax.nn.silu(x_embed + t_embed_split)
 
-    # 稍微加深网络以拟合更复杂的流场
     mlp = hk.Sequential([
-        hk.Linear(128), jax.nn.silu,
-        hk.Linear(128), jax.nn.silu,
-        hk.Linear(128), jax.nn.silu,
+        hk.Linear(64), jax.nn.silu,
+        hk.Linear(64), jax.nn.silu,
+        hk.Linear(64), jax.nn.silu,
         hk.Linear(2)
     ])
     return mlp(h)
 
 
 # ==========================================
-# 3. 不同的 Loss 实现 (RF vs MF)
-# ==========================================
-
-def get_loss_fns(network):
-    # --- A. Rectified Flow Loss (Standard) ---
-    def loss_rf(params, x_1, key):
-        """
-        L_RF = || u(x_t, t) - (x_1 - x_0) ||^2
-        """
-        batch_size = x_1.shape[0]
-        x_0 = jax.random.normal(key, x_1.shape)
-        t = jax.random.uniform(key, (batch_size, 1))
-
-        # Interpolation (t=0: noise, t=1: data)
-        x_t = t * x_1 + (1 - t) * x_0
-        target_v = x_1 - x_0  # Straight path
-
-        pred_v = network.apply(params, x_t, t.flatten())
-        return jnp.mean((pred_v - target_v) ** 2)
-
-    # --- B. MeanFlow Loss (From meanflow.py) ---
-    def loss_mf(params, x_1, key):
-        """
-        参考 meanflow.py:
-        u_tgt = v - (t - r) * dudt
-        L_MF = || u - sg(u_tgt) ||^2
-        """
-        batch_size = x_1.shape[0]
-        key, k1, k2 = jax.random.split(key, 3)
-        x_0 = jax.random.normal(k1, x_1.shape)
-
-        # 采样 t 和 r (t > r)
-        t_raw = jax.random.uniform(k2, (batch_size, 2))
-        t = jnp.max(t_raw, axis=1, keepdims=True)
-        r = jnp.min(t_raw, axis=1, keepdims=True)
-
-        # 构造输入 x_t
-        x_t = t * x_1 + (1 - t) * x_0
-
-        # 基础向量 v (noise -> data)
-        # 注意：meanflow.py 中 v = e - x (noise - data)，因为它的 t=0 是 data
-        # 这里我们保持 train_logp.py 的习惯 t=1 是 data。
-        # 所以 v = x_1 - x_0 (data - noise)，流向一致即可
-        v = x_1 - x_0
-
-        # 定义辅助函数用于求 JVP
-        def forward_fn(x, time):
-            return network.apply(params, x, time.flatten())
-
-        # 计算 dudt (Total Derivative w.r.t time)
-        # primal: u(x_t, t)
-        # tangents: (dx/dt, dt/dt) = (v, 1)
-        # jvp 返回: (u_val, du_dt_total)
-        # 注意 t 的 tangent 应该是 全1向量
-        ones = jnp.ones_like(t)
-        u_val, dudt = jax.jvp(forward_fn, (x_t, t), (v, ones))
-
-        # 构造 Target (修正项)
-        # u_tgt = v - (t - r) * dudt
-        # sg: stop_gradient
-        dt = t - r
-        u_tgt = v - dt * dudt
-        u_tgt = jax.lax.stop_gradient(u_tgt)
-
-        # Loss
-        return jnp.mean((u_val - u_tgt) ** 2)
-
-    return loss_rf, loss_mf
-
-
-# ==========================================
-# 4. 熵估计器 (Hutchinson Trace)
+# 3. 核心逻辑：Estimator
 # ==========================================
 class Estimator:
     def __init__(self, policy_apply):
         self.policy = policy_apply
 
-    def compute_log_likelihood(self, key, params, act, num_steps):
+    def compute_log_likelihood(self, key: jax.Array, params: hk.Params, act: jax.Array,
+                               num_steps: int) -> jax.Array:
         def model_fn(t, x):
             return self.policy(params, x, t)
 
@@ -163,131 +95,179 @@ class Estimator:
             return jax.scipy.stats.norm.logpdf(z).sum(axis=-1)
 
         z_key, _ = jax.random.split(key)
-        epsilon = jax.random.normal(z_key, act.shape)  # Noise for trace estimation
+        z = jax.random.normal(z_key, act.shape)
 
         def ode_dynamics(state, t):
             f_t, _ = state
             u_t_fn = lambda x: model_fn(t, x)
-            # JVP for trace: epsilon^T * J
-            u_val, vjp_fn = jax.vjp(u_t_fn, f_t)
-            vjp_val = vjp_fn(epsilon)[0]
-            trace_approx = jnp.sum(vjp_val * epsilon, axis=-1)
-            return u_val, -trace_approx  # d(logp)/dt = -Tr(J)
+            _, vjp_fn = jax.vjp(u_t_fn, f_t)
+            vjp_z = vjp_fn(z)[0]
+            trace_term = jnp.sum(vjp_z * z, axis=-1)
+            df_dt = u_t_fn(f_t)
+            dg_dt = -trace_term
+            return df_dt, dg_dt
 
-        # 积分: t=1 (Data) -> t=0 (Noise)
-        # dt 为负
         dt = -1.0 / num_steps
-        timesteps = jnp.linspace(1.0, 1.0 / num_steps, num_steps)
 
         def solver_step(state, t):
-            df, dg = ode_dynamics(state, t)
-            # Euler step
-            return (state[0] + df * dt, state[1] + dg * dt), None
+            f_t, g_t = state
+            df_dt, dg_dt = ode_dynamics(state, t)
+            f_next = f_t + df_dt * dt
+            g_next = g_t + dg_dt * dt
+            return (f_next, g_next), None
 
-        init_state = (act, jnp.zeros(act.shape[:-1]))
-        final_state, _ = jax.lax.scan(solver_step, init_state, timesteps)
+        timesteps = jnp.linspace(1.0, 1.0 / num_steps, num_steps)
+        initial_state = (act, jnp.zeros(act.shape[:-1]))
+        final_state, _ = jax.lax.scan(solver_step, initial_state, timesteps)
+        f_0, g_0 = final_state
 
-        # log p(x) = log p(z) + delta_logp
-        return log_p0(final_state[0]) + final_state[1]
+        log_p1 = log_p0(f_0) - g_0
+        return log_p1
 
 
 # ==========================================
-# 5. 主程序
+# 4. 主程序
 # ==========================================
 def main():
-    rng = jax.random.PRNGKey(2025)
+    # --- [配置区域] ---
+    WEIGHTS_FILE = "toy_gmm_params.pkl"
+
+    # 模式选择: "auto", "train", "load"
+    # "auto": 有文件就加载，没文件就训练
+    # "train": 强制重新训练
+    # "load": 强制加载 (文件不存在报错)
+    RUN_MODE = "auto"
+
+    # --- [初始化] ---
+    rng = jax.random.PRNGKey(42)
     gmm = ToyGMM()
 
-    # Init Network
+    rng, init_rng = jax.random.split(rng)
+    dummy_x = jnp.zeros((1, 2))
+    dummy_t = jnp.zeros((1, 1))
     network = hk.without_apply_rng(hk.transform(net_fn))
-    params_init = network.init(rng, jnp.zeros((1, 2)), jnp.zeros((1, 1)))
+    params = network.init(init_rng, dummy_x, dummy_t)
 
-    loss_rf, loss_mf = get_loss_fns(network)
+    # --- [模式控制逻辑] ---
+    do_train = False
 
-    # 训练函数
-    def train_model(loss_fn, name):
-        print(f"Training {name} Model...")
-        optimizer = optax.adam(1e-3)
-        opt_state = optimizer.init(params_init)
-        params = params_init
+    if RUN_MODE == "train":
+        print(f"[Mode: TRAIN] Force retraining...")
+        do_train = True
+    elif RUN_MODE == "load":
+        print(f"[Mode: LOAD] Loading weights from {WEIGHTS_FILE}...")
+        if not os.path.exists(WEIGHTS_FILE):
+            raise FileNotFoundError(f"Weight file '{WEIGHTS_FILE}' not found! Cannot load.")
+        with open(WEIGHTS_FILE, 'rb') as f:
+            params = pickle.load(f)
+        print("Weights loaded.")
+    else:  # auto
+        if os.path.exists(WEIGHTS_FILE):
+            print(f"[Mode: AUTO] Found {WEIGHTS_FILE}, loading...")
+            try:
+                with open(WEIGHTS_FILE, 'rb') as f:
+                    params = pickle.load(f)
+                print("Weights loaded successfully.")
+            except Exception as e:
+                print(f"Error loading weights ({e}), switching to training.")
+                do_train = True
+        else:
+            print(f"[Mode: AUTO] No weights found, starting training...")
+            do_train = True
+
+    # --- [训练逻辑] ---
+    if do_train:
+        total_steps = 20000
+        lr_schedule = optax.cosine_decay_schedule(1e-3, total_steps, alpha=1e-2)
+        optimizer = optax.adam(learning_rate=lr_schedule)
+        opt_state = optimizer.init(params)
 
         @jax.jit
-        def step(p, opt, batch, k):
-            grads = jax.grad(loss_fn)(p, batch, k)
-            updates, new_opt = optimizer.update(grads, opt)
-            return optax.apply_updates(p, updates), new_opt
+        def loss_fn(params, x_1, key):
+            x_0 = jax.random.normal(key, x_1.shape)
+            t = jax.random.uniform(key, (x_1.shape[0], 1))
+            x_t = t * x_1 + (1 - t) * x_0
+            target_v = x_1 - x_0
+            pred_v = network.apply(params, x_t, t.flatten())
+            return jnp.mean((pred_v - target_v) ** 2)
 
-        # 训练循环 (15000步足够Toy Task收敛)
-        key = jax.random.PRNGKey(0)
-        for i in range(15001):
-            key, k_batch, k_step = jax.random.split(key, 3)
+        @jax.jit
+        def update(params, opt_state, batch, key):
+            grads = jax.grad(loss_fn)(params, batch, key)
+            updates, new_opt_state = optimizer.update(grads, opt_state)
+            new_params = optax.apply_updates(params, updates)
+            return new_params, new_opt_state
+
+        print(f"Start training for {total_steps} steps (Batch: 512)...")
+        for i in range(total_steps):
+            rng, step_key = jax.random.split(rng)
             batch = gmm.sample(512)
-            params, opt_state = step(params, opt_state, batch, k_step)
-            if i % 5000 == 0:
-                print(f"  Step {i}")
-        return params
+            params, opt_state = update(params, opt_state, batch, step_key)
+            if (i + 1) % 2000 == 0:
+                print(f"Step {i + 1}/{total_steps}")
 
-    # 1. 训练 RF 模型 (用于 FLAME-R)
-    params_rf = train_model(loss_rf, "RF (Rectified Flow)")
+        print(f"Saving weights to {WEIGHTS_FILE}...")
+        with open(WEIGHTS_FILE, 'wb') as f:
+            pickle.dump(params, f)
+        print("Training done & saved.")
 
-    # 2. 训练 MF 模型 (用于 FLAME-M)
-    params_mf = train_model(loss_mf, "MF (MeanFlow)")
-
-    # --- 绘图 ---
-    print("Generating Plots...")
+    # --- [绘图逻辑] ---
+    print("Generating Figure 11...")
     estimator = Estimator(network.apply)
 
-    # 准备网格
-    grid_size = 100
-    L = 2.5
-    x = np.linspace(-L, L, grid_size)
-    X, Y = np.meshgrid(x, x)
-    pts = jnp.array(np.stack([X.ravel(), Y.ravel()], 1))
+    grid_size = 50
+    x = np.linspace(-1, 1, grid_size)
+    y = np.linspace(-1, 1, grid_size)
+    X, Y = np.meshgrid(x, y)
+    points = np.stack([X.flatten(), Y.flatten()], axis=1)
+    points_jax = jnp.array(points)
 
-    # 预编译推理函数
-    @jax.jit
-    def calc_logp(key, p, n_steps, n_trace):
-        # 对每个点做 n_trace 次 Hutchinson 采样取平均，让图更平滑
-        keys = jax.random.split(key, n_trace)
-        # vmap over keys
-        vals = jax.vmap(lambda k: estimator.compute_log_likelihood(k, p, pts, n_steps))(keys)
-        return jnp.mean(vals, axis=0).reshape(grid_size, grid_size)
+    def estimate_grid_impl(key, T, N):
+        keys = jax.random.split(key, N)
+        logp_samples = jax.vmap(
+            lambda k: estimator.compute_log_likelihood(k, params, points_jax, T)
+        )(keys)
+        logp_avg = jnp.mean(logp_samples, axis=0)
+        return logp_avg.reshape(grid_size, grid_size)
 
-    # 实验配置
-    # (Title, Params, Num Steps)
-    # n_trace 固定为 20
-    experiments = [
-        ("Ground Truth", None, None),
-        ("FLAME-R (N=20)", params_rf, 20),
-        ("FLAME-M (Naive N=1)", params_mf, 1),  # 关键：单步估计，Bias显著
-        ("FLAME-M (Ours N=10)", params_mf, 10)  # 关键：多步估计，修复Bias
-    ]
+    estimate_grid = jax.jit(estimate_grid_impl, static_argnums=(1, 2))
 
-    fig, axes = plt.subplots(1, 4, figsize=(20, 4.5))
-    vmin, vmax = -8, -1.0  # 固定色阶以便对比
+    fig = plt.figure(figsize=(14, 6), dpi=100)
+    gs = gridspec.GridSpec(2, 4, width_ratios=[1, 0.2, 1, 1])
 
+    # (a) True
+    ax_true = fig.add_subplot(gs[:, 0])
     Z_true = gmm.log_prob(X, Y)
+    vmin, vmax = Z_true.min(), Z_true.max()
+    im_true = ax_true.contourf(X, Y, Z_true, levels=50, cmap='viridis', vmin=vmin, vmax=vmax)
+    ax_true.set_aspect('equal')
+    ax_true.set_title('(a) True log probability', y=-0.15)
+    plt.colorbar(im_true, ax=ax_true, fraction=0.046, pad=0.04)
 
-    for i, (name, p, n_steps) in enumerate(experiments):
-        ax = axes[i]
-        if i == 0:
-            Z = Z_true
-        else:
-            rng, k = jax.random.split(rng)
-            Z = calc_logp(k, p, n_steps, 20)
+    # (b) Estimated
+    settings = [(20, 50, 0, 2), (20, 10, 0, 3), (50, 50, 1, 2), (50, 10, 1, 3)]
+    for T_val, N_val, row, col in settings:
+        rng, key = jax.random.split(rng)
+        print(f"Computing T={T_val}, N={N_val}...")
+        Z_est = estimate_grid(key, T_val, N_val)
 
-        im = ax.pcolormesh(X, Y, Z, cmap='viridis', vmin=vmin, vmax=vmax, shading='auto')
-        ax.set_title(name, fontsize=14, fontweight='bold')
-        ax.axis('off')
+        ax = fig.add_subplot(gs[row, col])
+        im = ax.contourf(X, Y, Z_est, levels=50, cmap='viridis', vmin=vmin, vmax=vmax)
         ax.set_aspect('equal')
+        if row == 0: ax.set_title(f'N={N_val}')
+        if col == 2:
+            ax.set_ylabel('$x_1$'); ax.text(-1.5, 0, f'T={T_val}', va='center', ha='right', fontsize=12,
+                                            fontweight='bold')
+        else:
+            ax.set_yticks([])
+        if row == 1:
+            ax.set_xlabel('$x_0$')
+        else:
+            ax.set_xticks([])
 
-    cbar_ax = fig.add_axes([0.92, 0.15, 0.01, 0.7])
-    fig.colorbar(im, cax=cbar_ax, label='Log Probability')
-
-    plt.suptitle("Impact of Integration Steps on Entropy Estimation", fontsize=16, y=1.05)
-    plt.savefig('toy_entropy_comparison_final.pdf', bbox_inches='tight')
+    fig.text(0.65, 0.05, '(b) Estimated log probability', ha='center', fontsize=12)
+    plt.tight_layout()
     plt.show()
-    print("Done. Saved to toy_entropy_comparison_final.pdf")
 
 
 if __name__ == "__main__":
