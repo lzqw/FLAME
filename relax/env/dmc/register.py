@@ -1,6 +1,7 @@
 from relax.env.dmc.wrapper import DMControlToGymWrapper
 from relax.env.dmc.dmc import make
 from gymnasium.envs.registration import register
+from relax.env.dmc.dmc_gym import DMControlEnv
 
 def make_dm_control_env(domain_name, task_name, render_size=(84, 84), **kwargs):
     dmc_env = make(domain_name, task_name, frame_stack=3, action_repeat=2, seed=0)
@@ -47,6 +48,24 @@ def register_dm_control_envs():
             kwargs={"domain_name": domain, "task_name": task},
         )
         print(domain, task)
+
+        vector_env_id = f"dm_control_vector_{domain}_{task}-v0"
+        register(
+            id=vector_env_id,
+            entry_point="relax.env.dmc.register:make_dm_control_vector_env",  # 指向上面新定义的函数
+            kwargs={"domain_name": domain, "task_name": task},
+        )
+        print(f"Registered: {env_id} and {vector_env_id}")
+
+def make_dm_control_vector_env(domain_name, task_name, seed=0, action_repeat=2):
+    return DMControlEnv(
+        domain_name=domain_name,
+        task_name=task_name,
+        task_kwargs={'random': seed},
+        flatten=True,       # 开启向量模式
+        from_pixels=False,  # 关闭图像模式
+        action_repeat=action_repeat
+    )
 
 """
 all avaliable envs:
