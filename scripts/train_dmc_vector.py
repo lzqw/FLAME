@@ -89,8 +89,11 @@ if __name__ == "__main__":
 
     # 环境设置 (请使用 register.py 中注册的向量环境 ID，如 dm_control_vector_walker_walk-v0)
     parser.add_argument("--env", type=str, default="dm_control_vector_dog_walk-v0")
+    #dm_control_vector_dog_walk-v0
+    #dm_control_vector_humanoid_walk-v0
+    #dm_control_vector_manipulator_insert_ball-v0
     parser.add_argument("--suffix", type=str, default="vector_test")
-    parser.add_argument("--num_vec_envs", type=int, default=5)  # 默认开启5个并行环境
+    parser.add_argument("--num_vec_envs", type=int, default=2)  # 默认开启5个并行环境
 
     # 网络参数
     parser.add_argument("--hidden_num", type=int, default=3)
@@ -101,13 +104,13 @@ if __name__ == "__main__":
     parser.add_argument("--diffusion_steps", type=int, default=10)  # SET 1 FOR MF BASED ALGORITHM
     parser.add_argument("--diffusion_steps_test", type=int, default=1)
     parser.add_argument("--num_ent_timesteps", type=int,
-                        default=2)  # The same as diffusion steps for rf. For mf based algorithms, set 5 or 4
+                        default=10)  # The same as diffusion steps for rf. For mf based algorithms, set 5 or 4
     parser.add_argument("--num_particles", type=int, default=32)
     parser.add_argument("--noise_scale", type=float, default=1.0)
 
     # 训练超参数
-    parser.add_argument("--start_step", type=int, default=int(3e4))
-    parser.add_argument("--total_step", type=int, default=int(1e6))
+    parser.add_argument("--start_step", type=int, default=int(5e4))
+    parser.add_argument("--total_step", type=int, default=int(3e6))
     parser.add_argument("--lr", type=float, default=3e-4)
     parser.add_argument("--lr_schedule_end", type=float, default=3e-5)
     parser.add_argument("--alpha_lr", type=float, default=0.005)  # 注意：这里根据参考代码设为了 0.005
