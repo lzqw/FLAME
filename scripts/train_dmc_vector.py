@@ -88,7 +88,7 @@ if __name__ == "__main__":
     parser.add_argument("--alg", type=str, default="sac")
 
     # 环境设置 (请使用 register.py 中注册的向量环境 ID，如 dm_control_vector_walker_walk-v0)
-    parser.add_argument("--env", type=str, default="dm_control_vector_walker_walk-v0")
+    parser.add_argument("--env", type=str, default="dm_control_vector_dog_walk-v0")
     parser.add_argument("--suffix", type=str, default="vector_test")
     parser.add_argument("--num_vec_envs", type=int, default=5)  # 默认开启5个并行环境
 
@@ -98,8 +98,8 @@ if __name__ == "__main__":
     parser.add_argument("--diffusion_hidden_dim", type=int, default=256)
 
     # Diffusion/Flow 参数
-    parser.add_argument("--diffusion_steps", type=int, default=20)  # SET 1 FOR MF BASED ALGORITHM
-    parser.add_argument("--diffusion_steps_test", type=int, default=20)
+    parser.add_argument("--diffusion_steps", type=int, default=10)  # SET 1 FOR MF BASED ALGORITHM
+    parser.add_argument("--diffusion_steps_test", type=int, default=1)
     parser.add_argument("--num_ent_timesteps", type=int,
                         default=2)  # The same as diffusion steps for rf. For mf based algorithms, set 5 or 4
     parser.add_argument("--num_particles", type=int, default=32)
@@ -111,14 +111,14 @@ if __name__ == "__main__":
     parser.add_argument("--lr", type=float, default=3e-4)
     parser.add_argument("--lr_schedule_end", type=float, default=3e-5)
     parser.add_argument("--alpha_lr", type=float, default=0.005)  # 注意：这里根据参考代码设为了 0.005
-    parser.add_argument("--delay_alpha_update", type=float, default=100)
+    parser.add_argument("--delay_alpha_update", type=float, default=10)
     parser.add_argument("--seed", type=int, default=200)
     parser.add_argument("--replay_buffer_size", type=int, default=int(1e6))
     parser.add_argument("--use_ema_policy", default=True, action="store_true")
 
     # Entropy / Reweighting 参数
-    parser.add_argument("--target_entropy_scale", type=float, default=3.0)
-    parser.add_argument("--sample_k", type=int, default=100)
+    parser.add_argument("--target_entropy_scale", type=float, default=1.0)
+    parser.add_argument("--sample_k", type=int, default=200)
     parser.add_argument("--fix_alpha", type=str2bool, default=False)
     parser.add_argument("--alpha", type=float, default=1.0)
     parser.add_argument("--init_alpha", type=float, default=1.0)
@@ -317,6 +317,7 @@ if __name__ == "__main__":
                                                mish,
                                                num_timesteps=args.diffusion_steps,
                                                num_timesteps_test=args.diffusion_steps_test,
+                                               num_ent_timesteps=args.num_ent_timesteps,
                                                num_particles=args.num_particles,
                                                noise_scale=args.noise_scale,
                                                target_entropy_scale=args.target_entropy_scale,
