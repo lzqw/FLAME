@@ -103,7 +103,7 @@ class RF2SACENTNet:
 
         # Compute log probability of the original action (before adding exploration noise)
         log_prob = self.compute_log_likelihood(entropy_key, policy_params_only, obs, act)
-
+        # entropy = jnp.zeros((obs.shape[0],), dtype=jnp.float32)
         # Entropy is the negative log probability
         entropy = -log_prob
 
