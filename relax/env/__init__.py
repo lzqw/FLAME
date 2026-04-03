@@ -3,6 +3,7 @@ from gymnasium import Env, Wrapper, make, register
 from gymnasium.spaces import Box
 
 from relax.env.vector import VectorEnv, SerialVectorEnv, GymProcessVectorEnv, PipeProcessVectorEnv, SpinlockProcessVectorEnv, FutexProcessVectorEnv
+from relax.env import safe_double_integrator  # noqa: F401
 register(
     id='FlatThreeLaneStraight',  # <-- 这是你将在训练脚本中使用的新 ID
     entry_point='relax.env.drive.lane_change:make_flat_metadrive_env',  # 指向你的创建函数
