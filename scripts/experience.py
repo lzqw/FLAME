@@ -40,7 +40,7 @@ class Experience(NamedTuple):
 
     @staticmethod
     def create(obs, action, reward, terminated, truncated, next_obs, info=None):
-        return Experience(obs=obs, action=action, reward=reward, done=terminated, next_obs=next_obs)
+        return Experience(obs=obs, action=action, reward=reward, done=np.logical_or(terminated, truncated), next_obs=next_obs)
 
 class GAEExperience(NamedTuple):
     obs: "jax.Array"
@@ -121,7 +121,7 @@ class SafeExperience(NamedTuple):
             obs=obs,
             action=action,
             reward=reward,
-            done=terminated,
+            done=np.logical_or(terminated, truncated),
             next_obs=next_obs,
             cost=cost,
             feasible=feasible,
