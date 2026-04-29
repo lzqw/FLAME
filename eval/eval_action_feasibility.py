@@ -46,11 +46,16 @@ def main():
         raw_samples = np.asarray(agent.get_action(sk, np.asarray(sample_obs)))
         exec_samples, sample_violation, _ = project_action_jax_batched(sample_obs, raw_samples, action_grid, cfg)
 
-        feasible_ratio = float(np.mean(1.0 - np.asarray(sample_violation)))
-        safe_diversity = float(np.mean(np.var(np.asarray(exec_samples), axis=0)))
+        raw_samples_np = np.asarray(raw_samples)
+        exec_samples_np = np.asarray(exec_samples)
+        sample_violation_np = np.asarray(sample_violation)
+        feasible_ratio = float(np.mean(1.0 - sample_violation_np))  # rho_feas
+        apr = float(np.mean(np.linalg.norm(raw_samples_np - exec_samples_np, axis=-1)))  # action projection residual
+        action_dispersion = float(np.mean(np.var(raw_samples_np, axis=0)))  # D_a
+        safe_diversity = float(np.mean(np.var(exec_samples_np, axis=0)))  # D_safe
 
-        bin_x = np.clip(((np.asarray(exec_samples)[:, 0] + 1.0) * 0.5 * (args.grid_size - 1)).astype(int), 0, args.grid_size - 1)
-        bin_y = np.clip(((np.asarray(exec_samples)[:, 1] + 1.0) * 0.5 * (args.grid_size - 1)).astype(int), 0, args.grid_size - 1)
+        bin_x = np.clip(((exec_samples_np[:, 0] + 1.0) * 0.5 * (args.grid_size - 1)).astype(int), 0, args.grid_size - 1)
+        bin_y = np.clip(((exec_samples_np[:, 1] + 1.0) * 0.5 * (args.grid_size - 1)).astype(int), 0, args.grid_size - 1)
         hist = np.zeros((args.grid_size, args.grid_size), dtype=np.float32)
         np.add.at(hist, (bin_y, bin_x), 1.0)
         p_route = hist.ravel() / np.maximum(hist.sum(), 1.0)
@@ -62,11 +67,13 @@ def main():
             'safe_mask': safe_mask.tolist(),
             'qp_heatmap': qp_grid.tolist(),
             'grid_projected_actions': np.asarray(grid_exec).tolist(),
-            'raw_samples': raw_samples.tolist(),
-            'projected_samples': np.asarray(exec_samples).tolist(),
-            'feasible_raw_action_ratio': feasible_ratio,
-            'safe_action_diversity': safe_diversity,
-            'action_route_entropy': action_route_entropy,
+            'raw_samples': raw_samples_np.tolist(),
+            'projected_samples': exec_samples_np.tolist(),
+            'rho_feas': feasible_ratio,
+            'APR': apr,
+            'D_a': action_dispersion,
+            'D_safe': safe_diversity,
+            'H_act_route': action_route_entropy,
         })
 
     Path(args.save_path).write_text(json.dumps({'records': records}, indent=2))

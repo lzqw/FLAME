@@ -27,8 +27,10 @@ def main():
     for ax, m in zip(axs, args.methods):
         data = np.load(Path(args.base_dir) / m / 'rollouts.npz')
         pos = data['positions']
+        valid_lengths = data['valid_lengths'] if 'valid_lengths' in data else np.full((pos.shape[0],), pos.shape[1], dtype=np.int32)
         for i in range(min(20, pos.shape[0])):
-            ax.plot(pos[i, :, 0], pos[i, :, 1], alpha=0.6, lw=1.0)
+            T = int(valid_lengths[i])
+            ax.plot(pos[i, :T, 0], pos[i, :T, 1], alpha=0.6, lw=1.0)
         draw_scene(ax)
         ax.set_title(m)
 

@@ -40,7 +40,10 @@ def main():
         ax.set_xlabel('action x')
         ax.set_ylabel('action y')
 
-    fig.suptitle(f"state={rec['state']}, feasible_ratio={rec['feasible_raw_action_ratio']:.3f}, entropy={rec['action_route_entropy']:.3f}")
+    fig.suptitle(
+        f"state={rec['state']}, rho_feas={rec['rho_feas']:.3f}, APR={rec['APR']:.3f}, "
+        f"D_a={rec['D_a']:.3f}, D_safe={rec['D_safe']:.3f}, H={rec['H_act_route']:.3f}"
+    )
     plt.tight_layout()
     plt.savefig(f'{args.out_prefix}.png', dpi=200)
     plt.savefig(f'{args.out_prefix}.pdf')
