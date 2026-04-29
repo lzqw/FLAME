@@ -109,7 +109,7 @@ def run_evaluation(agent, algo, eval_episodes=200, seed=0):
     valid_step_count = max(int(step_mask.sum()), 1)
     return {
         'success_rate': float(np.mean(is_success)),
-        'collision_rate': float(np.mean(np.any(distance_to_obstacle < 0.0, axis=1))),
+        'collision_rate': float(np.mean(np.any((distance_to_obstacle < 0.0) & step_mask, axis=1))),
         'return': float(np.mean(episode_return)),
         'FAR': float(np.sum(filter_active * step_mask) / valid_step_count),
         'APR': float(np.sum(projection_residual * step_mask) / valid_step_count),
@@ -204,7 +204,7 @@ def main():
     valid_step_count = max(int(step_mask.sum()), 1)
     summary = {
         'success_rate': float(np.mean(is_success)),
-        'collision_rate': float(np.mean(np.any(distance_to_obstacle < 0.0, axis=1))),
+        'collision_rate': float(np.mean(np.any((distance_to_obstacle < 0.0) & step_mask, axis=1))),
         'state_violation_rate': float(np.sum(state_violation * step_mask) / valid_step_count),
         'episode_return_mean': float(np.mean(episode_return)),
         'episode_return_std': float(np.std(episode_return)),
