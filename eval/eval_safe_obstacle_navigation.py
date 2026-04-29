@@ -13,7 +13,28 @@ if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
 from envs.safe_obstacle_navigation_2d import SafeObstacleNavigation2DEnv
-from scripts.train_safe_obstacle_navigation import make_algo, goal_controller
+from relax.algorithm.safe_pullback_rf2_sac_ent import SafePullbackRF2SACENT
+from relax.network.safe_pullback_rf2_sac_ent import create_safe_pullback_rf2_sac_ent_net
+
+
+def goal_controller(state, goal):
+    d = goal - state
+    return np.clip(d / (np.linalg.norm(d) + 1e-6), -1.0, 1.0).astype(np.float32)
+
+
+def make_algo(args, obs_dim=8, act_dim=2):
+    key = jax.random.PRNGKey(args.seed)
+    net, params = create_safe_pullback_rf2_sac_ent_net(
+        key, obs_dim, act_dim, hidden_sizes=[256, 256, 256], diffusion_hidden_sizes=[256, 256, 256],
+        num_timesteps=args.diffusion_steps, num_ent_timesteps=args.num_ent_timesteps,
+        alpha_value=args.alpha_value, fixed_alpha=args.fixed_alpha, init_alpha=args.init_alpha,
+    )
+    return SafePullbackRF2SACENT(
+        net, params, gamma=args.gamma, gamma_p=args.gamma_p, lr=args.lr, alpha_lr=args.alpha_lr,
+        sample_k=args.sample_k, lambda_p=args.lambda_p, use_projection_critic=args.use_projection_critic,
+        fixed_alpha=args.fixed_alpha, alpha_value=args.alpha_value,
+        lambda_p_warmup_steps=args.lambda_p_warmup_steps, lambda_d=args.lambda_d,
+    )
 
 
 def classify_route(pos_traj):
@@ -25,12 +46,71 @@ def classify_route(pos_traj):
 def load_agent(checkpoint_path, algo):
     with open(checkpoint_path, 'rb') as f:
         ckpt = pickle.load(f)
-    args = argparse.Namespace(seed=ckpt['seed'], diffusion_steps=10, num_ent_timesteps=10, alpha_value=0.01,
-                              fixed_alpha=False, init_alpha=0.01, gamma=0.99, gamma_p=0.99, lr=3e-4,
-                              alpha_lr=1e-2, sample_k=64, lambda_p=1.0, use_projection_critic=True)
+    saved_args = ckpt.get('args')
+    if saved_args is None:
+        saved_args = {
+            'seed': ckpt['seed'], 'diffusion_steps': 10, 'num_ent_timesteps': 10, 'alpha_value': 0.01,
+            'fixed_alpha': False, 'init_alpha': 0.01, 'gamma': 0.99, 'gamma_p': 0.99, 'lr': 3e-4,
+            'alpha_lr': 1e-2, 'sample_k': 64, 'lambda_p': 1.0, 'use_projection_critic': True,
+            'lambda_p_warmup_steps': 100000, 'lambda_d': 0.5,
+        }
+    args = argparse.Namespace(**saved_args)
     agent = make_algo(args)
     agent.state = ckpt['agent_state']
     return agent
+
+
+def run_evaluation(agent, algo, eval_episodes=200, seed=0):
+    env = SafeObstacleNavigation2DEnv(use_filter=algo != 'rf2_no_filter', seed=seed)
+    key = jax.random.PRNGKey(seed + 123)
+    T, N = env.episode_len, eval_episodes
+
+    is_success = np.zeros((N,), bool)
+    episode_return = np.zeros((N,), np.float32)
+    filter_active = np.zeros((N, T), bool)
+    safe_violation = np.zeros((N, T), bool)
+    projection_residual = np.zeros((N, T), np.float32)
+    distance_to_obstacle = np.zeros((N, T), np.float32)
+    positions = np.zeros((N, T + 1, 2), np.float32)
+    time_to_goal = np.full((N,), T, np.int32)
+
+    for i in range(N):
+        obs, _ = env.reset(seed=seed + i)
+        positions[i, 0] = env.state
+        for t in range(T):
+            if algo == 'goal_filter':
+                raw = goal_controller(env.state, env.goal)
+            else:
+                key, ak = jax.random.split(key)
+                raw = np.asarray(agent.get_action(ak, obs[None, :])[0])
+            nobs, r, term, trunc, info = env.step(raw)
+            filter_active[i, t] = info['filter_active']
+            safe_violation[i, t] = info['safe_violation']
+            projection_residual[i, t] = info['projection_residual']
+            distance_to_obstacle[i, t] = info['distance_to_obstacle']
+            episode_return[i] += r
+            positions[i, t + 1] = env.state
+            obs = nobs
+            if term and not is_success[i]:
+                is_success[i] = True
+                time_to_goal[i] = t + 1
+            if term or trunc:
+                break
+    routes = [classify_route(positions[i, :time_to_goal[i] + 1]) for i in range(N) if is_success[i]]
+    upper = routes.count('upper')
+    lower = routes.count('lower')
+    ns = max(len(routes), 1)
+    p_up, p_low = upper / ns, lower / ns
+    route_entropy = -(p_up * np.log(p_up + 1e-8) + p_low * np.log(p_low + 1e-8))
+    return {
+        'success_rate': float(np.mean(is_success)),
+        'collision_rate': float(np.mean(np.any(distance_to_obstacle < 0.0, axis=1))),
+        'return': float(np.mean(episode_return)),
+        'FAR': float(np.mean(filter_active)),
+        'APR': float(np.mean(projection_residual)),
+        'feasible_raw_action_ratio': float(np.mean(1 - safe_violation.astype(np.float32))),
+        'route_entropy': float(route_entropy),
+    }
 
 
 def main():

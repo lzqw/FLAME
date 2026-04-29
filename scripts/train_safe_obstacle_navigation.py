@@ -16,6 +16,7 @@ from envs.safe_obstacle_navigation_2d import SafeObstacleNavigation2DEnv
 from relax.algorithm.safe_pullback_rf2_sac_ent import SafePullbackRF2SACENT
 from relax.network.safe_pullback_rf2_sac_ent import create_safe_pullback_rf2_sac_ent_net
 from scripts.safe_pullback_experience import SafePullbackExperience
+from eval.eval_safe_obstacle_navigation import run_evaluation
 
 
 class Batch(NamedTuple):
@@ -45,7 +46,35 @@ def make_algo(args, obs_dim=8, act_dim=2):
         net, params, gamma=args.gamma, gamma_p=args.gamma_p, lr=args.lr, alpha_lr=args.alpha_lr,
         sample_k=args.sample_k, lambda_p=args.lambda_p, use_projection_critic=args.use_projection_critic,
         fixed_alpha=args.fixed_alpha, alpha_value=args.alpha_value,
+        lambda_p_warmup_steps=args.lambda_p_warmup_steps, lambda_d=args.lambda_d,
     )
+
+
+def configure_algo_mode(args):
+    if args.algo == 'rf2_filter':
+        args.use_filter = True
+        args.use_projection_critic = False
+        args.lambda_p = 0.0
+    elif args.algo == 'safe_pullback_rf2':
+        args.use_filter = True
+        args.use_projection_critic = True
+        args.lambda_p = 1.0
+    elif args.algo == 'safe_pullback_rf2_no_entropy':
+        args.use_filter = True
+        args.use_projection_critic = True
+        args.lambda_p = 1.0
+        args.fixed_alpha = True
+        args.alpha_value = 0.01
+    elif args.algo == 'rf2_no_filter':
+        args.use_filter = False
+        args.use_projection_critic = False
+        args.lambda_p = 0.0
+    elif args.algo == 'goal_filter':
+        args.use_filter = True
+        args.use_projection_critic = False
+        args.lambda_p = 0.0
+    else:
+        raise ValueError(f'Unsupported algo mode: {args.algo}')
 
 
 def sample_batch(buf, batch_size):
@@ -81,17 +110,20 @@ def main():
     p.add_argument('--gamma_p', type=float, default=0.99)
     p.add_argument('--sample_k', type=int, default=64)
     p.add_argument('--lambda_p', type=float, default=1.0)
-    p.add_argument('--use_projection_critic', action='store_true', default=True)
+    p.add_argument('--use_projection_critic', action='store_true', default=False)
     p.add_argument('--fixed_alpha', action='store_true', default=False)
     p.add_argument('--alpha_value', type=float, default=0.01)
     p.add_argument('--init_alpha', type=float, default=0.01)
     p.add_argument('--diffusion_steps', type=int, default=10)
     p.add_argument('--num_ent_timesteps', type=int, default=10)
+    p.add_argument('--lambda_p_warmup_steps', type=int, default=100000)
+    p.add_argument('--lambda_d', type=float, default=0.5)
+    p.add_argument('--eval_episodes', type=int, default=100)
     args = p.parse_args()
+    configure_algo_mode(args)
 
     np.random.seed(args.seed)
-    use_filter = args.algo != 'rf2_no_filter'
-    env = SafeObstacleNavigation2DEnv(noise_sigma=(args.noise_sigma_x, args.noise_sigma_y), use_filter=use_filter, seed=args.seed)
+    env = SafeObstacleNavigation2DEnv(noise_sigma=(args.noise_sigma_x, args.noise_sigma_y), use_filter=args.use_filter, seed=args.seed)
     agent = make_algo(args)
     key = jax.random.PRNGKey(args.seed + 7)
 
@@ -99,6 +131,7 @@ def main():
     log_dir.mkdir(parents=True, exist_ok=True)
     buffer = []
     train_log = []
+    eval_log = []
 
     obs, _ = env.reset(seed=args.seed)
     for step in range(1, args.total_steps + 1):
@@ -126,10 +159,20 @@ def main():
             out['step'] = step
             train_log.append(out)
 
+        if step % args.eval_interval == 0:
+            if args.algo == 'goal_filter':
+                eval_result = run_evaluation(None, args.algo, args.eval_episodes, seed=args.seed + step)
+            else:
+                eval_result = run_evaluation(agent, args.algo, args.eval_episodes, seed=args.seed + step)
+            eval_result['step'] = step
+            eval_log.append(eval_result)
+
     with open(log_dir / 'train_metrics.pkl', 'wb') as f:
         pickle.dump(train_log, f)
     with open(log_dir / 'checkpoint.pkl', 'wb') as f:
-        pickle.dump({'algo': args.algo, 'seed': args.seed, 'agent_state': agent.state}, f)
+        pickle.dump({'algo': args.algo, 'seed': args.seed, 'args': vars(args), 'agent_state': agent.state}, f)
+    with open(log_dir / 'eval_metrics.pkl', 'wb') as f:
+        pickle.dump(eval_log, f)
 
 
 if __name__ == '__main__':
