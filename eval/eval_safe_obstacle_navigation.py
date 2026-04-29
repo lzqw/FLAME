@@ -105,13 +105,15 @@ def run_evaluation(agent, algo, eval_episodes=200, seed=0):
     ns = max(len(routes), 1)
     p_up, p_low = upper / ns, lower / ns
     route_entropy = -(p_up * np.log(p_up + 1e-8) + p_low * np.log(p_low + 1e-8))
+    step_mask = (np.arange(T)[None, :] < (valid_lengths - 1)[:, None])
+    valid_step_count = max(int(step_mask.sum()), 1)
     return {
         'success_rate': float(np.mean(is_success)),
         'collision_rate': float(np.mean(np.any(distance_to_obstacle < 0.0, axis=1))),
         'return': float(np.mean(episode_return)),
-        'FAR': float(np.mean(filter_active)),
-        'APR': float(np.mean(projection_residual)),
-        'feasible_raw_action_ratio': float(np.mean(1 - safe_violation.astype(np.float32))),
+        'FAR': float(np.sum(filter_active * step_mask) / valid_step_count),
+        'APR': float(np.sum(projection_residual * step_mask) / valid_step_count),
+        'feasible_raw_action_ratio': float(np.sum((1 - safe_violation.astype(np.float32)) * step_mask) / valid_step_count),
         'route_entropy': float(route_entropy),
     }
 
@@ -198,16 +200,18 @@ def main():
     p_up, p_low = upper / ns, lower / ns
     route_entropy = -(p_up * np.log(p_up + 1e-8) + p_low * np.log(p_low + 1e-8))
 
+    step_mask = (np.arange(T)[None, :] < (valid_lengths - 1)[:, None])
+    valid_step_count = max(int(step_mask.sum()), 1)
     summary = {
         'success_rate': float(np.mean(is_success)),
         'collision_rate': float(np.mean(np.any(distance_to_obstacle < 0.0, axis=1))),
-        'state_violation_rate': float(np.mean(state_violation)),
+        'state_violation_rate': float(np.sum(state_violation * step_mask) / valid_step_count),
         'episode_return_mean': float(np.mean(episode_return)),
         'episode_return_std': float(np.std(episode_return)),
         'time_to_goal_mean': float(np.mean(time_to_goal)),
-        'filter_activation_rate': float(np.mean(filter_active)),
-        'avg_projection_residual': float(np.mean(projection_residual)),
-        'feasible_raw_action_ratio': float(np.mean(1 - safe_violation.astype(np.float32))),
+        'filter_activation_rate': float(np.sum(filter_active * step_mask) / valid_step_count),
+        'avg_projection_residual': float(np.sum(projection_residual * step_mask) / valid_step_count),
+        'feasible_raw_action_ratio': float(np.sum((1 - safe_violation.astype(np.float32)) * step_mask) / valid_step_count),
         'route_upper_ratio': float(p_up),
         'route_lower_ratio': float(p_low),
         'route_entropy': float(route_entropy),
