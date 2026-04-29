@@ -152,6 +152,8 @@ class SafePullbackRF2SACENT(Algorithm):
             q_reward = jnp.minimum(self.agent.q(p.q1, obs_rep, exec_clean), self.agent.q(p.q2, obs_rep, exec_clean))
             q_proj = self.agent.get_qp(p.qp, obs_rep, clean) if self.use_projection_critic else jnp.zeros_like(q_reward)
             d_proj = jnp.sum((clean - exec_clean) ** 2, axis=-1)
+            far_batch = jnp.mean((d_proj > 1e-8).astype(jnp.float32))
+            apr_batch = jnp.mean(d_proj)
             lambda_p_current = self.lambda_p * jnp.minimum(1.0, state.step / jnp.maximum(self.lambda_p_warmup_steps, 1))
             score = jax.lax.stop_gradient(q_reward - lambda_p_current * q_proj - self.lambda_d * d_proj)
             critic = score / jnp.maximum(alpha, 1e-3)
@@ -203,7 +205,8 @@ class SafePullbackRF2SACENT(Algorithm):
                         q_reward_mean=jnp.mean(q_reward), q_projection_mean=jnp.mean(q_proj),
                         projection_cost_batch=jnp.mean(projection_cost),
                         safe_pullback_score_mean=jnp.mean(score),
-                        qp_td_loss=qp_aux["td_loss"], qp_cf_loss=qp_aux["l_cf"], qp_lb_loss=qp_aux["lb"])
+                        qp_td_loss=qp_aux["td_loss"], qp_cf_loss=qp_aux["l_cf"], qp_lb_loss=qp_aux["lb"],
+                        lambda_p_current=lambda_p_current, FAR_batch=far_batch, APR_batch=apr_batch)
             return ns, info
 
         self._update = _update
