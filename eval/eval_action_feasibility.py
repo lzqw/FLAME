@@ -56,24 +56,20 @@ def main():
         apr = float(np.mean(np.linalg.norm(raw_samples_np - exec_samples_np, axis=-1)))  # action projection residual
         action_dispersion = float(np.mean(np.var(raw_samples_np, axis=0)))  # D_a
         feasible_mask = (1.0 - sample_violation_np).astype(bool)
-        if np.any(feasible_mask):
-            safe_diversity = float(np.mean(np.var(raw_samples_np[feasible_mask], axis=0)))  # D_safe
+        eps = 1e-6
+        if np.sum(feasible_mask) >= 2:
+            cov_safe = np.cov(raw_samples_np[feasible_mask], rowvar=False)
+            cov_safe = np.asarray(cov_safe, dtype=np.float32)
+            safe_diversity = float(np.linalg.slogdet(cov_safe + eps * np.eye(raw_samples_np.shape[1], dtype=np.float32))[1])
         else:
-            safe_diversity = 0.0
+            safe_diversity = float(np.log(eps) * raw_samples_np.shape[1])
 
-        if pos[0] > 0.0 and abs(pos[1]) < 0.2:
-            route_sign = np.sign(raw_samples_np[:, 1])
-            route_sign = np.where(route_sign > 0, 1, 0)
-            counts = np.bincount(route_sign, minlength=2).astype(np.float32)
-            p_route = counts / np.maximum(counts.sum(), 1.0)
-            action_route_entropy = float(-(p_route * np.log(p_route + 1e-8)).sum())
-        else:
-            bin_x = np.clip(((raw_samples_np[:, 0] + 1.0) * 0.5 * (args.grid_size - 1)).astype(int), 0, args.grid_size - 1)
-            bin_y = np.clip(((raw_samples_np[:, 1] + 1.0) * 0.5 * (args.grid_size - 1)).astype(int), 0, args.grid_size - 1)
-            hist = np.zeros((args.grid_size, args.grid_size), dtype=np.float32)
-            np.add.at(hist, (bin_y, bin_x), 1.0)
-            p_route = hist.ravel() / np.maximum(hist.sum(), 1.0)
-            action_route_entropy = float(-(p_route * np.log(p_route + 1e-8)).sum())
+        up_count = np.sum(raw_samples_np[:, 1] > 0.0)
+        down_count = np.sum(raw_samples_np[:, 1] < 0.0)
+        total = max(float(up_count + down_count), 1.0)
+        p_up = up_count / total
+        p_down = down_count / total
+        action_route_entropy = float(-(p_up * np.log(p_up + 1e-8) + p_down * np.log(p_down + 1e-8)))
 
         records.append({
             'state': pos.tolist(),
