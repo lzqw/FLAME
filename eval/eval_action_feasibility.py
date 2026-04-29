@@ -11,11 +11,14 @@ from eval.eval_safe_obstacle_navigation import load_agent
 
 
 def build_obs(pos):
-    goal = np.array([-2.5, 0.0], dtype=np.float32)
-    vec = goal - pos
-    d_goal = np.linalg.norm(vec)
-    d_obs = np.linalg.norm(pos)
-    return np.array([pos[0], pos[1], vec[0], vec[1], d_goal, d_obs, 0.0, 0.0], dtype=np.float32)
+    goal = np.array([-2.6, 0.0], dtype=np.float32)
+    obstacle_center = np.array([0.0, 0.0], dtype=np.float32)
+    obstacle_radius = 0.8
+    rel_goal = pos - goal
+    rel_obs = pos - obstacle_center
+    d_obs = np.linalg.norm(rel_obs) - obstacle_radius
+    d_goal = np.linalg.norm(rel_goal)
+    return np.array([pos[0], pos[1], rel_goal[0], rel_goal[1], rel_obs[0], rel_obs[1], d_obs, d_goal], dtype=np.float32)
 
 
 def main():
@@ -52,14 +55,25 @@ def main():
         feasible_ratio = float(np.mean(1.0 - sample_violation_np))  # rho_feas
         apr = float(np.mean(np.linalg.norm(raw_samples_np - exec_samples_np, axis=-1)))  # action projection residual
         action_dispersion = float(np.mean(np.var(raw_samples_np, axis=0)))  # D_a
-        safe_diversity = float(np.mean(np.var(exec_samples_np, axis=0)))  # D_safe
+        feasible_mask = (1.0 - sample_violation_np).astype(bool)
+        if np.any(feasible_mask):
+            safe_diversity = float(np.mean(np.var(raw_samples_np[feasible_mask], axis=0)))  # D_safe
+        else:
+            safe_diversity = 0.0
 
-        bin_x = np.clip(((exec_samples_np[:, 0] + 1.0) * 0.5 * (args.grid_size - 1)).astype(int), 0, args.grid_size - 1)
-        bin_y = np.clip(((exec_samples_np[:, 1] + 1.0) * 0.5 * (args.grid_size - 1)).astype(int), 0, args.grid_size - 1)
-        hist = np.zeros((args.grid_size, args.grid_size), dtype=np.float32)
-        np.add.at(hist, (bin_y, bin_x), 1.0)
-        p_route = hist.ravel() / np.maximum(hist.sum(), 1.0)
-        action_route_entropy = float(-(p_route * np.log(p_route + 1e-8)).sum())
+        if pos[0] > 0.0 and abs(pos[1]) < 0.2:
+            route_sign = np.sign(raw_samples_np[:, 1])
+            route_sign = np.where(route_sign > 0, 1, 0)
+            counts = np.bincount(route_sign, minlength=2).astype(np.float32)
+            p_route = counts / np.maximum(counts.sum(), 1.0)
+            action_route_entropy = float(-(p_route * np.log(p_route + 1e-8)).sum())
+        else:
+            bin_x = np.clip(((raw_samples_np[:, 0] + 1.0) * 0.5 * (args.grid_size - 1)).astype(int), 0, args.grid_size - 1)
+            bin_y = np.clip(((raw_samples_np[:, 1] + 1.0) * 0.5 * (args.grid_size - 1)).astype(int), 0, args.grid_size - 1)
+            hist = np.zeros((args.grid_size, args.grid_size), dtype=np.float32)
+            np.add.at(hist, (bin_y, bin_x), 1.0)
+            p_route = hist.ravel() / np.maximum(hist.sum(), 1.0)
+            action_route_entropy = float(-(p_route * np.log(p_route + 1e-8)).sum())
 
         records.append({
             'state': pos.tolist(),

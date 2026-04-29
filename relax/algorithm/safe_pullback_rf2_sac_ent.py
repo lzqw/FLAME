@@ -93,8 +93,12 @@ class SafePullbackRF2SACENT(Algorithm):
             def qploss(qp):
                 pred = self.agent.get_qp(qp, obs, raw_action)
                 td_loss = jnp.mean((pred - jax.lax.stop_gradient(yp)) ** 2)
-                cf_policy = clean[:, :8, :]
-                cf_uniform = jax.random.uniform(k3, (obs.shape[0], 8, raw_action.shape[1]), minval=-1.0, maxval=1.0)
+                policy_keys = jax.random.split(k3, 8)
+                cf_policy = jax.vmap(
+                    lambda sk: self.agent.get_action(sk, (p.policy, p.log_alpha, p.q1, p.q2), obs)
+                )(policy_keys)
+                cf_policy = jnp.swapaxes(cf_policy, 0, 1)
+                cf_uniform = jax.random.uniform(k2, (obs.shape[0], 8, raw_action.shape[1]), minval=-1.0, maxval=1.0)
                 cf_actions = jnp.concatenate([cf_policy, cf_uniform], axis=1)
                 cf_obs = jnp.repeat(obs[:, None, :], cf_actions.shape[1], axis=1)
                 cf_exec, _, _ = project_action_jax_batched(cf_obs, cf_actions, self.action_grid, self.cfg)
