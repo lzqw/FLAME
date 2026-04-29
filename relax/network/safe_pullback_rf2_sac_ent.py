@@ -1,0 +1,155 @@
+from dataclasses import dataclass
+from typing import Callable, NamedTuple, Sequence, Tuple, Union
+
+import jax
+import jax.numpy as jnp
+import haiku as hk
+import math
+import jax.scipy.stats
+
+from relax.network.blocks import Activation, DACERPolicyNet, QNet
+from relax.utils.flow import OTFlow
+from relax.utils.jax_utils import random_key_from_data
+
+
+class SafePullbackRF2Params(NamedTuple):
+    q1: hk.Params
+    q2: hk.Params
+    target_q1: hk.Params
+    target_q2: hk.Params
+    qp: hk.Params
+    vp: hk.Params
+    target_vp: hk.Params
+    policy: hk.Params
+    target_policy: hk.Params
+    log_alpha: jax.Array
+
+
+@dataclass
+class SafePullbackRF2SACENTNet:
+    q: Callable
+    qp: Callable
+    vp: Callable
+    policy: Callable
+    num_timesteps: int
+    num_ent_timesteps: int
+    num_timesteps_test: int
+    act_dim: int
+    num_particles: int
+    target_entropy: float
+    noise_scale: float
+    noise_schedule: str
+    alpha_value: float
+    fixed_alpha: bool
+
+    @property
+    def flow(self):
+        return OTFlow(self.num_timesteps)
+
+    @property
+    def flow_test(self):
+        return OTFlow(self.num_timesteps_test)
+
+    def get_qp(self, qp_params, obs, raw_action):
+        return self.qp(qp_params, obs, raw_action)
+
+    def get_vp(self, vp_params, obs):
+        return self.vp(vp_params, obs)
+
+    def get_action(self, key, policy_tuple, obs):
+        policy_params, log_alpha, q1_params, q2_params = policy_tuple
+
+        def model_fn(t, x):
+            return self.policy(policy_params, obs, x, t)
+
+        act = self.flow.p_sample(key, model_fn, (*obs.shape[:-1], self.act_dim)).clip(-1, 1)
+        noise = jax.random.normal(jax.random.split(key)[1], act.shape)
+        scale = jnp.float32(self.alpha_value) if self.fixed_alpha else jnp.exp(log_alpha)
+        return act + noise * scale * self.noise_scale
+
+    def get_action_ent(self, key, policy_tuple, obs):
+        policy_params, log_alpha, q1_params, q2_params = policy_tuple
+        sample_key, noise_key, ent_key = jax.random.split(key, 3)
+
+        def model_fn(t, x):
+            return self.policy(policy_params, obs, x, t)
+
+        act = self.flow.p_sample(sample_key, model_fn, (*obs.shape[:-1], self.act_dim)).clip(-1, 1)
+        log_prob = self.compute_log_likelihood(ent_key, policy_params, obs, act)
+        entropy = -log_prob
+        scale = jnp.float32(0.1) if self.fixed_alpha else jnp.exp(log_alpha)
+        return act + jax.random.normal(noise_key, act.shape) * scale * self.noise_scale, entropy
+
+    def compute_log_likelihood(self, key, policy_params, obs, act):
+        def model_fn(t, x):
+            return self.policy(policy_params, obs, x, t)
+
+        def log_p0(z):
+            return jax.scipy.stats.norm.logpdf(z).sum(axis=-1)
+
+        z = jax.random.normal(key, act.shape)
+
+        def ode(state, t):
+            f_t, _ = state
+            u_t_fn = lambda x: model_fn(t, x)
+            _, vjp_fn = jax.vjp(u_t_fn, f_t)
+            vjp_z = vjp_fn(z)[0]
+            trace_term = jnp.sum(vjp_z * z, axis=-1)
+            return u_t_fn(f_t), -trace_term
+
+        n = self.num_ent_timesteps
+        dt = -1.0 / n
+
+        def step(state, t):
+            df, dg = ode(state, t)
+            f, g = state
+            return (f + df * dt, g + dg * dt), None
+
+        timesteps = jnp.linspace(1.0, 1.0 / n, n)
+        final, _ = jax.lax.scan(step, (act, jnp.zeros(act.shape[:-1])), timesteps)
+        f0, g0 = final
+        return log_p0(f0) - g0
+
+
+def create_safe_pullback_rf2_sac_ent_net(
+    key,
+    obs_dim,
+    act_dim,
+    hidden_sizes,
+    diffusion_hidden_sizes,
+    activation=jax.nn.relu,
+    num_timesteps=20,
+    num_ent_timesteps=20,
+    num_timesteps_test=20,
+    num_particles=32,
+    noise_scale=0.05,
+    target_entropy_scale=0.9,
+    alpha_value=0.01,
+    fixed_alpha=True,
+    init_alpha=0.01,
+):
+    q = hk.without_apply_rng(hk.transform(lambda obs, act: QNet(hidden_sizes, activation)(obs, act)))
+    qp = hk.without_apply_rng(hk.transform(lambda obs, act: QNet(hidden_sizes, activation)(obs, act)))
+    vp = hk.without_apply_rng(hk.transform(lambda obs: hk.nets.MLP((*hidden_sizes, 1), activation=activation)(obs).squeeze(-1)))
+    policy = hk.without_apply_rng(hk.transform(lambda obs, act, t: DACERPolicyNet(diffusion_hidden_sizes, activation)(obs, act, t)))
+
+    @jax.jit
+    def init(key, obs, act):
+        k1, k2, k3, k4, k5 = jax.random.split(key, 5)
+        q1 = q.init(k1, obs, act)
+        q2 = q.init(k2, obs, act)
+        qp_p = qp.init(k3, obs, act)
+        vp_p = vp.init(k4, obs)
+        pol = policy.init(k5, obs, act, 0)
+        return SafePullbackRF2Params(q1, q2, q1, q2, qp_p, vp_p, vp_p, pol, pol, jnp.array(math.log(init_alpha), dtype=jnp.float32))
+
+    sample_obs = jnp.zeros((1, obs_dim))
+    sample_act = jnp.zeros((1, act_dim))
+    params = init(key, sample_obs, sample_act)
+    net = SafePullbackRF2SACENTNet(q=q.apply, qp=qp.apply, vp=vp.apply, policy=policy.apply,
+                                   num_timesteps=num_timesteps, num_ent_timesteps=num_ent_timesteps,
+                                   num_timesteps_test=num_timesteps_test, act_dim=act_dim,
+                                   target_entropy=-act_dim * target_entropy_scale, num_particles=num_particles,
+                                   noise_scale=noise_scale, noise_schedule='linear',
+                                   alpha_value=alpha_value, fixed_alpha=fixed_alpha)
+    return net, params
