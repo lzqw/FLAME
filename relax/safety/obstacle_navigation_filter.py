@@ -85,6 +85,7 @@ def is_state_safe_tight_jax(pos, cfg: ObstacleNavConfig):
 
 def project_action_jax_flat(obs, raw_action, action_grid, cfg: ObstacleNavConfig):
     pos = obs[:, 0:2]
+    raw_action = jnp.clip(raw_action, -1.0, 1.0)
     raw_next = pos + cfg.dt * cfg.u_max * raw_action
     raw_feasible = is_state_safe_tight_jax(raw_next, cfg)
     next_pos_grid = pos[:, None, :] + cfg.dt * cfg.u_max * action_grid[None, :, :]

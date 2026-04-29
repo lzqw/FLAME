@@ -73,6 +73,7 @@ def run_evaluation(agent, algo, eval_episodes=200, seed=0):
     distance_to_obstacle = np.zeros((N, T), np.float32)
     positions = np.zeros((N, T + 1, 2), np.float32)
     time_to_goal = np.full((N,), T, np.int32)
+    valid_lengths = np.full((N,), T + 1, np.int32)
 
     for i in range(N):
         obs, _ = env.reset(seed=seed + i)
@@ -95,6 +96,8 @@ def run_evaluation(agent, algo, eval_episodes=200, seed=0):
                 is_success[i] = True
                 time_to_goal[i] = t + 1
             if term or trunc:
+                valid_lengths[i] = t + 2
+                positions[i, t + 1:] = positions[i, t + 1]
                 break
     routes = [classify_route(positions[i, :time_to_goal[i] + 1]) for i in range(N) if is_success[i]]
     upper = routes.count('upper')
@@ -144,6 +147,7 @@ def main():
     distance_to_obstacle = np.zeros((N, T), np.float32)
     is_success = np.zeros((N,), bool)
     time_to_goal = np.full((N,), T, np.int32)
+    valid_lengths = np.full((N,), T + 1, np.int32)
     episode_return = np.zeros((N,), np.float32)
 
     for i in range(N):
@@ -176,13 +180,16 @@ def main():
                 is_success[i] = True
                 time_to_goal[i] = t + 1
             if term or trunc:
+                valid_lengths[i] = t + 2
+                positions[i, t + 1:] = positions[i, t + 1]
+                obs_all[i, t + 1:] = obs_all[i, t + 1]
                 break
 
     np.savez(save_dir / 'rollouts.npz', positions=positions, obs=obs_all, raw_actions=raw_actions, exec_actions=exec_actions,
              rewards=rewards, state_violation=state_violation, tightened_violation=tightened_violation,
              safe_violation=safe_violation, filter_active=filter_active, projection_residual=projection_residual,
              projection_cost=projection_cost, distance_to_goal=distance_to_goal, distance_to_obstacle=distance_to_obstacle,
-             is_success=is_success, time_to_goal=time_to_goal, episode_return=episode_return)
+             is_success=is_success, time_to_goal=time_to_goal, valid_lengths=valid_lengths, episode_return=episode_return)
 
     routes = [classify_route(positions[i, :time_to_goal[i] + 1]) for i in range(N) if is_success[i]]
     upper = routes.count('upper')

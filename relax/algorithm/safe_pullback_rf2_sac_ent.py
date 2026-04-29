@@ -72,6 +72,7 @@ class SafePullbackRF2SACENT(Algorithm):
 
             k1, k2, k3 = jax.random.split(key, 3)
             raw_next_action, entropy = self.agent.get_action_ent(k1, (p.policy, p.log_alpha, p.q1, p.q2), next_obs)
+            raw_next_action = jnp.clip(raw_next_action, -1.0, 1.0)
             exec_next_action, _, _ = project_action_jax_batched(next_obs, raw_next_action, self.action_grid, self.cfg)
 
             q1_t = self.agent.q(p.target_q1, next_obs, exec_next_action)
@@ -91,17 +92,35 @@ class SafePullbackRF2SACENT(Algorithm):
 
             def qploss(qp):
                 pred = self.agent.get_qp(qp, obs, raw_action)
-                return jnp.mean((pred - jax.lax.stop_gradient(yp)) ** 2), pred
+                td_loss = jnp.mean((pred - jax.lax.stop_gradient(yp)) ** 2)
+                cf_policy = clean[:, :8, :]
+                cf_uniform = jax.random.uniform(k3, (obs.shape[0], 8, raw_action.shape[1]), minval=-1.0, maxval=1.0)
+                cf_actions = jnp.concatenate([cf_policy, cf_uniform], axis=1)
+                cf_obs = jnp.repeat(obs[:, None, :], cf_actions.shape[1], axis=1)
+                cf_exec, _, _ = project_action_jax_batched(cf_obs, cf_actions, self.action_grid, self.cfg)
+                d_cf = jnp.sum((cf_actions - cf_exec) ** 2, axis=-1)
+                q_cf = self.agent.get_qp(qp, cf_obs, cf_actions)
+                l_cf = jnp.mean((q_cf - jax.lax.stop_gradient(d_cf)) ** 2)
+                lb = jnp.mean(jax.nn.relu(projection_cost - pred) ** 2)
+                total = td_loss + 0.5 * l_cf + 0.5 * lb
+                aux = dict(pred=pred, td_loss=td_loss, l_cf=l_cf, lb=lb)
+                return total, aux
 
             if self.use_projection_critic:
-                (qp_loss, qp_pred), qp_grads = jax.value_and_grad(qploss, has_aux=True)(p.qp)
+                (qp_loss, qp_aux), qp_grads = jax.value_and_grad(qploss, has_aux=True)(p.qp)
+                qp_pred = qp_aux["pred"]
             else:
                 qp_loss, qp_pred = jnp.float32(0.0), jnp.zeros_like(reward)
                 qp_grads = jax.tree_util.tree_map(jnp.zeros_like, p.qp)
+                qp_aux = dict(td_loss=jnp.float32(0.0), l_cf=jnp.float32(0.0), lb=jnp.float32(0.0))
 
             def vploss(vp):
                 pred = self.agent.get_vp(vp, obs)
-                policy_actions = jax.random.uniform(k2, (obs.shape[0], 8, raw_action.shape[-1]), minval=-1.0, maxval=1.0)
+                sample_keys = jax.random.split(k2, 8)
+                policy_actions = jax.vmap(
+                    lambda sk: self.agent.get_action(sk, (p.policy, p.log_alpha, p.q1, p.q2), obs)
+                )(sample_keys)
+                policy_actions = jnp.swapaxes(policy_actions, 0, 1)
                 policy_obs = jnp.repeat(obs[:, None, :], 8, axis=1)
                 target = jax.lax.stop_gradient(jnp.mean(self.agent.get_qp(p.qp, policy_obs, policy_actions), axis=1))
                 return jnp.mean((pred - target) ** 2), pred
@@ -128,7 +147,7 @@ class SafePullbackRF2SACENT(Algorithm):
 
             q_reward = jnp.minimum(self.agent.q(p.q1, obs_rep, exec_clean), self.agent.q(p.q2, obs_rep, exec_clean))
             q_proj = self.agent.get_qp(p.qp, obs_rep, clean) if self.use_projection_critic else jnp.zeros_like(q_reward)
-            d_proj = jnp.linalg.norm(clean - exec_clean, axis=-1)
+            d_proj = jnp.sum((clean - exec_clean) ** 2, axis=-1)
             lambda_p_current = self.lambda_p * jnp.minimum(1.0, state.step / jnp.maximum(self.lambda_p_warmup_steps, 1))
             score = jax.lax.stop_gradient(q_reward - lambda_p_current * q_proj - self.lambda_d * d_proj)
             critic = score / jnp.maximum(alpha, 1e-3)
@@ -147,18 +166,6 @@ class SafePullbackRF2SACENT(Algorithm):
                 return loss
 
             policy_loss, policy_grads = jax.value_and_grad(ploss)(p.policy)
-
-            if self.use_projection_critic:
-                cf_policy = clean[:, :8, :]
-                cf_uniform = jax.random.uniform(k3, (obs.shape[0], 8, raw_action.shape[1]), minval=-1.0, maxval=1.0)
-                cf_actions = jnp.concatenate([cf_policy, cf_uniform], axis=1)
-                cf_obs = jnp.repeat(obs[:, None, :], cf_actions.shape[1], axis=1)
-                cf_exec, _, _ = project_action_jax_batched(cf_obs, cf_actions, self.action_grid, self.cfg)
-                d_cf = jnp.linalg.norm(cf_actions - cf_exec, axis=-1)
-                q_cf = self.agent.get_qp(p.qp, cf_obs, cf_actions)
-                l_cf = jnp.mean((q_cf - jax.lax.stop_gradient(d_cf)) ** 2)
-                lb = jnp.mean(jax.nn.relu(projection_cost - self.agent.get_qp(p.qp, obs, raw_action)) ** 2)
-                qp_loss = qp_loss + 0.5 * l_cf + 0.5 * lb
 
             def aloss(log_alpha):
                 return jnp.mean(log_alpha * (jnp.mean(entropy) - self.agent.target_entropy))
@@ -191,7 +198,8 @@ class SafePullbackRF2SACENT(Algorithm):
                         policy_loss=policy_loss, alpha=jnp.exp(nloga),
                         q_reward_mean=jnp.mean(q_reward), q_projection_mean=jnp.mean(q_proj),
                         projection_cost_batch=jnp.mean(projection_cost),
-                        safe_pullback_score_mean=jnp.mean(score))
+                        safe_pullback_score_mean=jnp.mean(score),
+                        qp_td_loss=qp_aux["td_loss"], qp_cf_loss=qp_aux["l_cf"], qp_lb_loss=qp_aux["lb"])
             return ns, info
 
         self._update = _update

@@ -135,10 +135,10 @@ def main():
 
     obs, _ = env.reset(seed=args.seed)
     for step in range(1, args.total_steps + 1):
-        if step < args.start_steps:
-            raw_action = env.action_space.sample()
-        elif args.algo == 'goal_filter':
+        if args.algo == 'goal_filter':
             raw_action = goal_controller(env.state, env.goal)
+        elif step < args.start_steps:
+            raw_action = env.action_space.sample()
         else:
             key, ak = jax.random.split(key)
             raw_action = np.asarray(agent.get_action(ak, obs[None, :])[0])
