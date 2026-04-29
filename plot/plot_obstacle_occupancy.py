@@ -36,7 +36,10 @@ def main():
     rows = []
 
     for ax, m in zip(axs, args.methods):
-        pos = np.load(Path(args.base_dir) / m / 'rollouts.npz')['positions'].reshape(-1, 2)
+        data = np.load(Path(args.base_dir) / m / 'rollouts.npz')
+        pos_all = data['positions']
+        valid_lengths = data['valid_lengths'] if 'valid_lengths' in data else np.full((pos_all.shape[0],), pos_all.shape[1], dtype=np.int32)
+        pos = np.concatenate([pos_all[i, :int(valid_lengths[i])] for i in range(pos_all.shape[0])], axis=0)
         H, xedges, yedges = np.histogram2d(pos[:, 0], pos[:, 1], bins=[140, 80], range=[[-3.5, 3.5], [-2.0, 2.0]])
         Hn = (H.T / (H.max() + 1e-8))
         ax.imshow(Hn, origin='lower', extent=[-3.5, 3.5, -2.0, 2.0], aspect='auto')
