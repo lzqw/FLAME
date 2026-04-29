@@ -3,7 +3,7 @@ set -euo pipefail
 
 METHODS=(rf2_filter safe_pullback_rf2 safe_pullback_rf2_no_entropy goal_filter)
 for m in "${METHODS[@]}"; do
-  python scripts/train_safe_obstacle_navigation.py --algo "$m" --seed 0 --total_steps 20000 --log_dir "logs/obstacle/${m}_seed0"
+  python scripts/train_safe_obstacle_navigation.py --algo "$m" --seed 0 --total_steps 50000 --start_steps 5000 --update_after 5000 --batch_size 256 --log_dir "logs/obstacle/${m}_seed0"
   python eval/eval_safe_obstacle_navigation.py --checkpoint "logs/obstacle/${m}_seed0/checkpoint.pkl" --algo "$m" --eval_episodes 200 --save_dir "results/obstacle/$m"
 done
 
