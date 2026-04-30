@@ -59,15 +59,28 @@ class MultiGoalEnv(Env):
 
     def reset(self, *, seed: int = None, options: dict = None):
         super().reset(seed=seed)
-        unclipped_observation = self.init_mu + self.init_sigma * \
-                                self.np_random.normal(size=self.dynamics.s_dim)
+        p0 = self.np_random.uniform(-1.0, 1.0)
+        v0 = self.np_random.uniform(-0.5, 0.5)
+        self.observation = np.array([p0, v0], dtype=np.float32)
+
         o_lb, o_ub = self.observation_space.low, self.observation_space.high
-        self.observation = np.clip(unclipped_observation, o_lb, o_ub).astype(np.float32)
+        self.observation = np.clip(self.observation, o_lb, o_ub).astype(np.float32, copy=False)
+
+        # 在一步动态 x_{t+1} = x_t + a_t (+ noise) 下，当前状态对应的“安全动作区间”
+        # 这里只基于无噪声项计算，以便用于调试/可视化。
+        a_lb, a_ub = self.action_space.low, self.action_space.high
+        safe_low = np.maximum(a_lb, o_lb - self.observation).astype(np.float32)
+        safe_high = np.minimum(a_ub, o_ub - self.observation).astype(np.float32)
+        distance_to_boundary = float(np.min(np.minimum(self.observation - o_lb, o_ub - self.observation)))
+        info = {
+            "distance_to_boundary": distance_to_boundary,
+            "safe_action_interval": (safe_low, safe_high),
+        }
 
         if self.render_mode == "human":
             self.render()
 
-        return self.observation, {}
+        return self.observation, info
 
     @property
     def observation_space(self):
