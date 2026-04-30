@@ -1,4 +1,5 @@
 import argparse
+import json
 import pickle
 import sys
 from pathlib import Path
@@ -7,6 +8,7 @@ from typing import NamedTuple
 import jax
 import jax.numpy as jnp
 import numpy as np
+from tensorboardX import SummaryWriter
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 if str(PROJECT_ROOT) not in sys.path:
@@ -129,50 +131,88 @@ def main():
 
     log_dir = Path(args.log_dir)
     log_dir.mkdir(parents=True, exist_ok=True)
+    writer = SummaryWriter(str(log_dir / "tb"))
+    with open(log_dir / 'args.json', 'w') as f:
+        json.dump(vars(args), f, indent=2, sort_keys=True)
     buffer = []
     train_log = []
     eval_log = []
 
     obs, _ = env.reset(seed=args.seed)
-    for step in range(1, args.total_steps + 1):
-        if args.algo == 'goal_filter':
-            raw_action = goal_controller(env.state, env.goal)
-        elif step < args.start_steps:
-            raw_action = env.action_space.sample()
-        else:
-            key, ak = jax.random.split(key)
-            raw_action = np.asarray(agent.get_action(ak, obs[None, :])[0])
-
-        next_obs, reward, terminated, truncated, info = env.step(raw_action)
-        exp = SafePullbackExperience.create(obs, raw_action, info['exec_action'], reward, terminated, truncated, next_obs, info)
-        buffer.append(exp)
-        if len(buffer) > 1_000_000:
-            buffer.pop(0)
-        obs = next_obs
-        if terminated or truncated:
-            obs, _ = env.reset()
-
-        if step >= args.update_after and len(buffer) >= args.batch_size and args.algo != 'goal_filter':
-            key, uk = jax.random.split(key)
-            batch = sample_batch(buffer, args.batch_size)
-            out = agent.update(uk, batch)
-            out['step'] = step
-            train_log.append(out)
-
-        if step % args.eval_interval == 0:
+    try:
+        for step in range(1, args.total_steps + 1):
             if args.algo == 'goal_filter':
-                eval_result = run_evaluation(None, args.algo, args.eval_episodes, seed=args.seed + step)
+                raw_action = goal_controller(env.state, env.goal)
+            elif step < args.start_steps:
+                raw_action = env.action_space.sample()
             else:
-                eval_result = run_evaluation(agent, args.algo, args.eval_episodes, seed=args.seed + step)
-            eval_result['step'] = step
-            eval_log.append(eval_result)
+                key, ak = jax.random.split(key)
+                raw_action = np.asarray(agent.get_action(ak, obs[None, :])[0])
 
-    with open(log_dir / 'train_metrics.pkl', 'wb') as f:
-        pickle.dump(train_log, f)
-    with open(log_dir / 'checkpoint.pkl', 'wb') as f:
-        pickle.dump({'algo': args.algo, 'seed': args.seed, 'args': vars(args), 'agent_state': agent.state}, f)
-    with open(log_dir / 'eval_metrics.pkl', 'wb') as f:
-        pickle.dump(eval_log, f)
+            next_obs, reward, terminated, truncated, info = env.step(raw_action)
+            exp = SafePullbackExperience.create(obs, raw_action, info['exec_action'], reward, terminated, truncated, next_obs, info)
+            buffer.append(exp)
+            if len(buffer) > 1_000_000:
+                buffer.pop(0)
+            obs = next_obs
+            if terminated or truncated:
+                obs, _ = env.reset()
+
+            writer.add_scalar("train/buffer_size", float(len(buffer)), step)
+            env_scalar_keys = (
+                ("projection_residual", "train_env/projection_residual"),
+                ("projection_cost", "train_env/projection_cost"),
+                ("filter_active", "train_env/filter_active"),
+                ("safe_violation", "train_env/safe_violation"),
+                ("state_violation", "train_env/state_violation"),
+                ("reward", "train_env/reward"),
+            )
+            for info_key, tag in env_scalar_keys:
+                if info_key in info:
+                    writer.add_scalar(tag, float(info[info_key]), step)
+            writer.add_scalar("train_env/reward", float(reward), step)
+
+            if step >= args.update_after and len(buffer) >= args.batch_size and args.algo != 'goal_filter':
+                key, uk = jax.random.split(key)
+                batch = sample_batch(buffer, args.batch_size)
+                out = agent.update(uk, batch)
+                out['step'] = step
+                train_log.append(out)
+                for k, v in out.items():
+                    if k == "step":
+                        continue
+                    writer.add_scalar(f"train/{k}", float(v), step)
+                writer.flush()
+
+            if step % args.eval_interval == 0:
+                if args.algo == 'goal_filter':
+                    eval_result = run_evaluation(None, args.algo, args.eval_episodes, seed=args.seed + step)
+                else:
+                    eval_result = run_evaluation(agent, args.algo, args.eval_episodes, seed=args.seed + step)
+                eval_result['step'] = step
+                eval_log.append(eval_result)
+                for k, v in eval_result.items():
+                    if k == "step":
+                        continue
+                    writer.add_scalar(f"eval/{k}", float(v), step)
+                writer.flush()
+                print(
+                    f"[step {step}] eval_return={eval_result.get('return', float('nan')):.4f}, "
+                    f"success={eval_result.get('success_rate', float('nan')):.4f}, "
+                    f"FAR={eval_result.get('FAR', float('nan')):.4f}, "
+                    f"APR={eval_result.get('APR', float('nan')):.4f}"
+                )
+    except KeyboardInterrupt:
+        print("Training interrupted. Saving logs and checkpoint...")
+    finally:
+        with open(log_dir / 'train_metrics.pkl', 'wb') as f:
+            pickle.dump(train_log, f)
+        with open(log_dir / 'checkpoint.pkl', 'wb') as f:
+            pickle.dump({'algo': args.algo, 'seed': args.seed, 'args': vars(args), 'agent_state': agent.state}, f)
+        with open(log_dir / 'eval_metrics.pkl', 'wb') as f:
+            pickle.dump(eval_log, f)
+        writer.flush()
+        writer.close()
 
 
 if __name__ == '__main__':
